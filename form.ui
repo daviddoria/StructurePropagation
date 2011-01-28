@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>900</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>900</width>
+    <height>900</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>Interactive Graph Cut Segmentation</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <item>
+     <layout class="QGridLayout" name="gridLayout" rowstretch="1,17,6">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_9">
+        <property name="text">
+         <string>Original Image</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLabel" name="label_10">
+        <property name="text">
+         <string>Output Image</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QVTKWidget" name="qvtkWidgetLeft"/>
+      </item>
+      <item row="1" column="1">
+       <widget class="QVTKWidget" name="qvtkWidgetRight"/>
+      </item>
+      <item row="2" column="0">
+       <widget class="QGroupBox" name="grpSelection">
+        <property name="styleSheet">
+         <string notr="true">QGroupBox#grpSelection { 
+     border: 2px solid gray; 
+     border-radius: 3px; 
+ } 
+
+QGroupBox#grpSelection::title { 
+    background-color: transparent;
+ } </string>
+        </property>
+        <property name="title">
+         <string>Actions</string>
+        </property>
+        <widget class="QPushButton" name="btnClearStrokes">
+         <property name="geometry">
+          <rect>
+           <x>10</x>
+           <y>150</y>
+           <width>121</width>
+           <height>41</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Clear Strokes</string>
+         </property>
+        </widget>
+        <widget class="QPushButton" name="btnSaveStrokes">
+         <property name="geometry">
+          <rect>
+           <x>140</x>
+           <y>150</y>
+           <width>121</width>
+           <height>41</height>
+          </rect>
+         </property>
+         <property name="toolTip">
+          <string>The foreground and background pixels will be saved as binary images in X_Foreground.png and X_Background.png where X is specified in the file save diaglog.</string>
+         </property>
+         <property name="text">
+          <string>Save Strokes</string>
+         </property>
+        </widget>
+        <widget class="QPushButton" name="btnPropagate">
+         <property name="geometry">
+          <rect>
+           <x>240</x>
+           <y>80</y>
+           <width>151</width>
+           <height>41</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Propagate Structure</string>
+         </property>
+        </widget>
+        <widget class="QProgressBar" name="progressBar">
+         <property name="geometry">
+          <rect>
+           <x>260</x>
+           <y>130</y>
+           <width>118</width>
+           <height>23</height>
+          </rect>
+         </property>
+         <property name="value">
+          <number>24</number>
+         </property>
+        </widget>
+        <widget class="QPushButton" name="btnExtractPatches">
+         <property name="geometry">
+          <rect>
+           <x>50</x>
+           <y>60</y>
+           <width>111</width>
+           <height>31</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Extract patches</string>
+         </property>
+        </widget>
+       </widget>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>900</width>
+     <height>25</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="title">
+     <string>File</string>
+    </property>
+    <addaction name="actionOpen_Color_Image"/>
+    <addaction name="actionOpen_Grayscale_Image"/>
+    <addaction name="actionSave_Result"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title">
+     <string>Edit</string>
+    </property>
+    <addaction name="actionFlip_Image"/>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuEdit"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionOpen_Color_Image">
+   <property name="text">
+    <string>Open As Color Image</string>
+   </property>
+  </action>
+  <action name="actionOpen_Grayscale_Image">
+   <property name="text">
+    <string>Open As Grayscale Image</string>
+   </property>
+  </action>
+  <action name="actionOpen_RGBDI_Image">
+   <property name="text">
+    <string>Open As RGBDI Image</string>
+   </property>
+  </action>
+  <action name="actionSave_Result">
+   <property name="text">
+    <string>Save Result</string>
+   </property>
+  </action>
+  <action name="actionFlip_Image">
+   <property name="text">
+    <string>Flip Image</string>
+   </property>
+  </action>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>QVTKWidget</class>
+   <extends>QWidget</extends>
+   <header>QVTKWidget.h</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
