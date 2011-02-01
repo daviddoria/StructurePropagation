@@ -25,18 +25,37 @@ class StructurePropagationBase
 public:
   StructurePropagationBase();
 
-  virtual void ExtractSourcePatches(std::vector<itk::Index<2> > pixels) = 0;
-  virtual void ComputeTargetPatches(std::vector<itk::Index<2> > pixels) = 0;
+  void ComputePatchRegions(std::vector<itk::Index<2> > pixels);
+  void ComputeSourcePatchRegions(std::vector<itk::Index<2> > pixels);
+  void ComputeTargetPatchRegions(std::vector<itk::Index<2> > pixels);
 
   void SetMask(UnsignedCharScalarImageType::Pointer mask);
+  void GetMask(UnsignedCharScalarImageType::Pointer mask);
+
+  void SetPropagationLine(UnsignedCharScalarImageType::Pointer propagationLine);
 
   void SetPatchRadius(unsigned int radius);
 
+  std::vector<itk::ImageRegion<2> > GetSourcePatchRegions();
+  std::vector<itk::ImageRegion<2> > GetTargetPatchRegions();
+
+  virtual void PropagateStructure() = 0;
+
 protected:
+  void ExtractRegionsOfPropagationPath();
+
   UnsignedCharScalarImageType::Pointer Mask;
+  UnsignedCharScalarImageType::Pointer PropagationLine;
   unsigned int PatchRadius;
 
-  std::vector<itk::ImageRegion<2> > PatchRegions;
+  std::vector<itk::ImageRegion<2> > SourcePatchRegions;
+  std::vector<itk::ImageRegion<2> > TargetPatchRegions;
+
+  std::vector<UnsignedCharScalarImageType::Pointer> TargetStrokePaths;
+  std::vector<UnsignedCharScalarImageType::Pointer> SourceStrokePaths;
+
+  //std::vector<itk::Index<2> > NodeLocations;
+  std::vector<itk::Point<int, 2> > NodeLocations;
 };
 
 #endif

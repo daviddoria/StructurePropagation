@@ -4,20 +4,78 @@
 #include "itkImageRegionIterator.h"
 #include "itkBresenhamLine.h"
 #include "itkImageRegionConstIterator.h"
+#include "itkImageFileWriter.h"
 
 #include <vtkPolyData.h>
+
+double SumOfShortestDistances(std::vector<itk::Index<2> > indices1, std::vector<itk::Index<2> > indices2)
+{
+  // not finished
+  for(unsigned int i = 0; i < indices1.size(); i++)
+    {
+    for(unsigned int j = 0; j < indices1.size(); j++)
+      {
+      //double dist = p0.EuclideanDistanceTo(p1);
+      }
+    }
+  return 0;
+}
+
+double SumOfShortestDistances(std::vector<itk::Point<int, 2> > points1, std::vector<itk::Point<int, 2> > points2)
+{
+  double totalDistance = 0;
+  for(unsigned int i = 0; i < points1.size(); i++)
+    {
+    double minDist = 1e8;
+    double dist = 0;
+    for(unsigned int j = 0; j < points1.size(); j++)
+      {
+      dist = points1[i].EuclideanDistanceTo(points2[j]);
+      if(dist < minDist)
+        {
+        minDist = dist;
+        }
+      }
+    totalDistance += dist;
+    }
+  return totalDistance;
+}
+
+void WriteWhitePatches(itk::ImageRegion<2> imageRegion, std::vector<itk::ImageRegion<2> > regions, std::string filename)
+{
+  std::cout << "Writing " << regions.size() << " patches." << std::endl;
+
+  UnsignedCharScalarImageType::Pointer image = UnsignedCharScalarImageType::New();
+  image->SetRegions(imageRegion);
+  image->Allocate();
+  image->FillBuffer(0);
+
+  for(unsigned int i = 0; i < regions.size(); i++)
+    {
+    itk::ImageRegionIterator<UnsignedCharScalarImageType> imageIterator(image,regions[i]);
+
+    while(!imageIterator.IsAtEnd())
+      {
+      imageIterator.Set(255);
+
+      ++imageIterator;
+      }
+
+    }
+
+  typedef  itk::ImageFileWriter< UnsignedCharScalarImageType  > WriterType;
+  WriterType::Pointer writer = WriterType::New();
+  writer->SetFileName(filename);
+  writer->SetInput(image);
+  writer->Update();
+}
 
 void IndicesToBinaryImage(std::vector<itk::Index<2> > indices, UnsignedCharScalarImageType::Pointer image)
 {
   //std::cout << "Setting " << indices.size() << " points to non-zero." << std::endl;
 
   // Blank the image
-  itk::ImageRegionIterator<UnsignedCharScalarImageType> imageIterator(image,image->GetLargestPossibleRegion());
-  while(!imageIterator.IsAtEnd())
-    {
-    imageIterator.Set(0);
-    ++imageIterator;
-    }
+  image->FillBuffer(0);
 
   // Set the pixels of indices in list to 255
   for(unsigned int i = 0; i < indices.size(); i++)

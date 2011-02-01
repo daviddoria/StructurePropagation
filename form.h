@@ -66,6 +66,7 @@ public slots:
   void btnClearStrokes_clicked();
   void btnSaveStrokes_clicked();
   void btnPropagate_clicked();
+  void btnLoadMask_clicked();
 
   // These slots handle running the progress bar while the computations are done in a separate thread.
   void StartProgressSlot();
@@ -89,8 +90,11 @@ protected:
   // The main class. This will be instantiated as a StructurePropagation after the user selects which type of image to open.
   StructurePropagationBase* StructurePropagationFilter;
 
-  // The input and output image actors
+  // The input image actors
   vtkSmartPointer<vtkImageActor> OriginalImageActor;
+  vtkSmartPointer<vtkImageActor> MaskImageActor;
+
+  // The output image actors
   vtkSmartPointer<vtkImageActor> ResultActor;
 
   // The renderers
@@ -103,7 +107,7 @@ protected:
   // Allows the background color to be changed
   double BackgroundColor[3];
 
-  // We set this when the image is opeend. We sometimes need to know how big the image is.
+  // We set this when the image is opened. We sometimes need to know how big the image is.
   itk::ImageRegion<2> ImageRegion;
 
 };

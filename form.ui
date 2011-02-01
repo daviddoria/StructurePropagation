@@ -126,6 +126,19 @@ QGroupBox#grpSelection::title {
           <string>Extract patches</string>
          </property>
         </widget>
+        <widget class="QPushButton" name="btnLoadMask">
+         <property name="geometry">
+          <rect>
+           <x>220</x>
+           <y>20</y>
+           <width>91</width>
+           <height>27</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Load Mask</string>
+         </property>
+        </widget>
        </widget>
       </item>
      </layout>
@@ -138,7 +151,7 @@ QGroupBox#grpSelection::title {
      <x>0</x>
      <y>0</y>
      <width>900</width>
-     <height>25</height>
+     <height>24</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">

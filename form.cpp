@@ -38,9 +38,12 @@ Image Completion With Structure Propagation
 #include <vtkCamera.h>
 #include <vtkImageActor.h>
 #include <vtkImageData.h>
+#include <vtkImageMapToColors.h>
 #include <vtkInteractorStyleImage.h>
+#include <vtkLookupTable.h>
 #include <vtkPolyData.h>
 #include <vtkRenderer.h>
+#include <vtkRendererCollection.h>
 #include <vtkRenderWindow.h>
 #include <vtkSmartPointer.h>
 
@@ -58,6 +61,8 @@ Form::Form(QWidget *parent)
   connect( this->actionOpen_Grayscale_Image, SIGNAL( triggered() ), this, SLOT(actionOpen_Grayscale_Image_triggered()) );
 
   connect( this->btnPropagate, SIGNAL( clicked() ), this, SLOT(btnPropagate_clicked()));
+  connect( this->btnLoadMask, SIGNAL( clicked() ), this, SLOT(btnLoadMask_clicked()));
+
   connect( this->actionFlip_Image, SIGNAL( triggered() ), this, SLOT(actionFlip_Image_triggered()));
   connect( this->actionSave_Result, SIGNAL( triggered() ), this, SLOT(actionSave_Result_triggered()));
   connect( this->btnClearStrokes, SIGNAL( clicked() ), this, SLOT(btnClearStrokes_clicked()));
@@ -85,6 +90,7 @@ Form::Form(QWidget *parent)
 
   // Instantiations
   this->OriginalImageActor = vtkSmartPointer<vtkImageActor>::New();
+  this->MaskImageActor = vtkSmartPointer<vtkImageActor>::New();
   this->ResultActor = vtkSmartPointer<vtkImageActor>::New();
 
   // Add renderers - we flip the image by changing the camera view up because of the conflicting conventions used by ITK and VTK
@@ -111,8 +117,62 @@ Form::Form(QWidget *parent)
   this->ScribbleInteractorStyle = vtkSmartPointer<vtkScribbleInteractorStyle>::New();
   this->qvtkWidgetLeft->GetInteractor()->SetInteractorStyle(this->ScribbleInteractorStyle);
 
+  this->StructurePropagationFilter = NULL;
+
 }
 
+void Form::btnLoadMask_clicked()
+{
+  if(!this->StructurePropagationFilter)
+    {
+    std::cerr << "Cannot load a mask until an image is loaded!" << std::endl;
+    return;
+    }
+
+  // Get a filename to open
+  QString filename = QFileDialog::getOpenFileName(this,
+      tr("Open Mask"), ".", tr("Image Files (*.png *.bmp)"));
+
+  if(filename.isEmpty())
+    {
+    std::cerr << "No file selected!" << std::endl;
+    return;
+    }
+
+  // Read file
+  itk::ImageFileReader<UnsignedCharScalarImageType>::Pointer reader =
+    itk::ImageFileReader<UnsignedCharScalarImageType>::New();
+  reader->SetFileName(filename.toStdString());
+  reader->Update();
+
+  // Give the mask to the structure propagation algorithm
+  this->StructurePropagationFilter->SetMask(reader->GetOutput());
+
+  vtkSmartPointer<vtkImageData> VTKMaskImage =
+    vtkSmartPointer<vtkImageData>::New();
+  ITKImagetoVTKImage<UnsignedCharScalarImageType>(reader->GetOutput(), VTKMaskImage);
+
+  vtkSmartPointer<vtkLookupTable> lookupTable =
+    vtkSmartPointer<vtkLookupTable>::New();
+  lookupTable->SetNumberOfTableValues(2);
+  lookupTable->SetRange(0.0,1.0);
+  lookupTable->SetTableValue( 0, 0.0, 0.0, 0.0, 0.0 ); //label 0 is transparent
+  lookupTable->SetTableValue( 1, 1.0, 1.0, 1.0, 1.0 ); //label 1 is opaque and white
+  lookupTable->Build();
+
+  vtkSmartPointer<vtkImageMapToColors> mapTransparency =
+    vtkSmartPointer<vtkImageMapToColors>::New();
+  mapTransparency->SetLookupTable(lookupTable);
+  mapTransparency->SetInput(VTKMaskImage);
+  mapTransparency->PassAlphaToOutputOn();
+
+  //this->MaskImageActor->SetInput(VTKMaskImage);
+  this->MaskImageActor->SetInput(mapTransparency->GetOutput());
+
+  this->qvtkWidgetLeft->GetInteractor()->GetRenderWindow()->GetRenderers()->GetFirstRenderer()->AddActor(this->MaskImageActor);
+
+  this->ScribbleInteractorStyle->InitializeTracer(this->MaskImageActor);
+}
 
 void Form::StartProgressSlot()
 {
@@ -170,8 +230,16 @@ void Form::btnClearStrokes_clicked()
 
 void Form::btnExtractPatches_clicked()
 {
-  this->StructurePropagationFilter->ExtractSourcePatches(this->ScribbleInteractorStyle->GetColorStrokes());
-  this->StructurePropagationFilter->ComputeTargetPatches(this->ScribbleInteractorStyle->GetColorStrokes());
+  // This is just for testing - ExtractPatches should actually be called at the beginning of PropagateStructure
+  this->StructurePropagationFilter->ComputePatchRegions(this->ScribbleInteractorStyle->GetColorStrokes());
+
+  // The rest of this function is outputs for testing
+  UnsignedCharScalarImageType::Pointer strokeImage = UnsignedCharScalarImageType::New();
+  this->ScribbleInteractorStyle->GetStrokeImage(strokeImage);
+  this->StructurePropagationFilter->SetPropagationLine(strokeImage);
+
+  WriteWhitePatches(this->ImageRegion, this->StructurePropagationFilter->GetSourcePatchRegions(), "SourcePatches.png");
+  WriteWhitePatches(this->ImageRegion, this->StructurePropagationFilter->GetTargetPatchRegions(), "TargetPatches.png");
 }
 
 void Form::btnSaveStrokes_clicked()
@@ -199,13 +267,8 @@ void Form::btnSaveStrokes_clicked()
 
 void Form::btnPropagate_clicked()
 {
-  // Setup the graph cut from the GUI and the scribble selection
-  //this->GraphCut->SetLambda(ComputeLambda());
-//  this->GraphCut->SetSources(this->ScribbleInteractorStyle->GetColorStrokes());
-
-  // Setup and start the actual cut computation in a different thread
-  //this->ProgressThread.GraphCut = this->GraphCut;
-  ProgressThread.start();
+  this->StructurePropagationFilter->ComputePatchRegions(this->ScribbleInteractorStyle->GetColorStrokes());
+  this->StructurePropagationFilter->PropagateStructure();
 
 }
 

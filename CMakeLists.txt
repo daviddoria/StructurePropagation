@@ -16,10 +16,15 @@ INCLUDE( ${USE_VTK_FILE} )
 FIND_PACKAGE(ITK REQUIRED)
 INCLUDE( ${USE_ITK_FILE} )
 
+# OpenGM
+SET(OpenGM_IncludePath "/media/portable/src/opengm10/include" CACHE STRING "Path to OpenGM include/ directory")
+include_directories(${OpenGM_IncludePath})
+FILE(GLOB OpenGM_Headers ${OpenGM_IncludePath}/opengm/* ${OpenGM_IncludePath}/opengm/inference/*)
+
+
 ADD_EXECUTABLE(StructurePropagation main.cpp form.cpp ProgressThread.cpp
-graph.cpp maxflow.cpp
-#ImageGraphCutBase.cpp ImageGraphCut.cpp
-vtkScribbleInteractorStyle.cxx Helpers.cpp StructurePropagation.cxx StructurePropagationBase.cpp
+${OpenGM_Headers}
+vtkScribbleInteractorStyle.cxx Helpers.cpp StructurePropagationBase.cpp
 ${MOCSrcs} ${UISrcs})
 TARGET_LINK_LIBRARIES(StructurePropagation vtkHybrid vtkWidgets
 QVTK ${QT_LIBRARIES}
