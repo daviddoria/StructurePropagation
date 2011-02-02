@@ -15,17 +15,21 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// Custom
 #include "StructurePropagationBase.h"
 #include "Types.h"
+#include "Helpers.h"
 
+// ITK
 #include "itkImageRegionConstIterator.h"
 #include "itkRegionOfInterestImageFilter.h"
+#include "itkImageFileWriter.h"
 
 StructurePropagationBase::StructurePropagationBase()
 {
   this->Mask = UnsignedCharScalarImageType::New();
-
   this->PatchRadius = 5;
+  this->PropagationLineImage = UnsignedCharScalarImageType::New();
 }
 
 void StructurePropagationBase::SetMask(UnsignedCharScalarImageType::Pointer mask)
@@ -33,9 +37,9 @@ void StructurePropagationBase::SetMask(UnsignedCharScalarImageType::Pointer mask
   this->Mask->Graft(mask);
 }
 
-void StructurePropagationBase::SetPropagationLine(UnsignedCharScalarImageType::Pointer propagationLine)
+void StructurePropagationBase::SetPropagationLine(std::vector<itk::Index<2> > propagationLine)
 {
-  this->PropagationLine->Graft(propagationLine);
+  this->PropagationLine = propagationLine;
 }
 
 void StructurePropagationBase::SetPatchRadius(unsigned int radius)
@@ -44,11 +48,11 @@ void StructurePropagationBase::SetPatchRadius(unsigned int radius)
 }
 
 
-void StructurePropagationBase::ComputeSourcePatchRegions(std::vector<itk::Index<2> > pixels)
+void StructurePropagationBase::ComputeSourcePatchRegions()
 {
   //std::cout << "Patch radius: " << this->PatchRadius << std::endl;
 
-  for(unsigned int i = 0; i < pixels.size(); i++)
+  for(unsigned int i = 0; i < this->PropagationLine.size(); i++)
     {
     // Create a region centered on the pixels
     itk::Size<2> patchSize;
@@ -56,8 +60,8 @@ void StructurePropagationBase::ComputeSourcePatchRegions(std::vector<itk::Index<
 
     //std::cout << "Patch size: " << patchSize << std::endl;
     itk::Index<2> corner;
-    corner[0] = pixels[i][0] - this->PatchRadius;
-    corner[1] = pixels[i][1] - this->PatchRadius;
+    corner[0] = this->PropagationLine[i][0] - this->PatchRadius;
+    corner[1] = this->PropagationLine[i][1] - this->PatchRadius;
 
     itk::ImageRegion<2> region(corner, patchSize);
 
@@ -84,20 +88,20 @@ void StructurePropagationBase::ComputeSourcePatchRegions(std::vector<itk::Index<
     }
 }
 
-void StructurePropagationBase::ComputeTargetPatchRegions(std::vector<itk::Index<2> > pixels)
+void StructurePropagationBase::ComputeTargetPatchRegions()
 {
   // This function assumes that the stroke starts outside the masked region, enters the masked region, then exits the masked region
   bool enteredMaskedRegion = false;
 
-  for(unsigned int i = 0; i < pixels.size(); i++)
+  for(unsigned int i = 0; i < this->PropagationLine.size(); i++)
     {
     // Create a region centered on the pixels
     itk::Size<2> patchSize;
     patchSize.Fill(this->PatchRadius*2 + 1);
 
     itk::Index<2> corner;
-    corner[0] = pixels[i][0] - this->PatchRadius;
-    corner[1] = pixels[i][1] - this->PatchRadius;
+    corner[0] = this->PropagationLine[i][0] - this->PatchRadius;
+    corner[1] = this->PropagationLine[i][1] - this->PatchRadius;
 
     itk::ImageRegion<2> region(corner, patchSize);
 
@@ -122,8 +126,8 @@ void StructurePropagationBase::ComputeTargetPatchRegions(std::vector<itk::Index<
       this->TargetPatchRegions.push_back(region);
       i+=this->PatchRadius; // skip the next few pixels
       itk::Point<int, 2> point;
-      point[0] = pixels[i][0];
-      point[1] = pixels[i][1];
+      point[0] = this->PropagationLine[i][0];
+      point[1] = this->PropagationLine[i][1];
       //NodeLocations.push_back(pixels[i]);
       NodeLocations.push_back(point);
       }
@@ -150,6 +154,16 @@ std::vector<itk::ImageRegion<2> > StructurePropagationBase::GetTargetPatchRegion
 
 void StructurePropagationBase::ExtractRegionsOfPropagationPath()
 {
+  std::cout << "There are " << this->SourcePatchRegions.size() << " SourcePatchRegions." << std::endl;
+  std::cout << "There are " << this->TargetPatchRegions.size() << " TargetPatchRegions." << std::endl;
+
+  // output the line for testing
+  typedef  itk::ImageFileWriter< UnsignedCharScalarImageType > WriterType;
+  WriterType::Pointer writer = WriterType::New();
+  writer->SetFileName("PropagationLine_ExtractRegionsOfPropagationPath.png");
+  writer->SetInput(this->PropagationLineImage);
+  writer->Update();
+
   // Extract the regions of the propagation path
   this->SourceStrokePaths.clear();
   typedef itk::RegionOfInterestImageFilter< UnsignedCharScalarImageType, UnsignedCharScalarImageType > ROIFilterType;
@@ -158,7 +172,8 @@ void StructurePropagationBase::ExtractRegionsOfPropagationPath()
     {
     ROIFilterType::Pointer roiFilter = ROIFilterType::New();
     roiFilter->SetRegionOfInterest(this->SourcePatchRegions[i]);
-    roiFilter->SetInput(this->PropagationLine);
+    roiFilter->SetInput(this->PropagationLineImage);
+    roiFilter->Update();
     this->SourceStrokePaths.push_back(roiFilter->GetOutput());
     }
 
@@ -167,13 +182,17 @@ void StructurePropagationBase::ExtractRegionsOfPropagationPath()
     {
     ROIFilterType::Pointer roiFilter = ROIFilterType::New();
     roiFilter->SetRegionOfInterest(this->TargetPatchRegions[i]);
-    roiFilter->SetInput(this->PropagationLine);
+    roiFilter->SetInput(this->PropagationLineImage);
+    roiFilter->Update();
     this->TargetStrokePaths.push_back(roiFilter->GetOutput());
     }
+
+  std::cout << "There are " << this->TargetStrokePaths.size() << " TargetStrokePaths." << std::endl;
+  std::cout << "There are " << this->SourceStrokePaths.size() << " SourceStrokePaths." << std::endl;
 }
 
-void StructurePropagationBase::ComputePatchRegions(std::vector<itk::Index<2> > pixels)
+void StructurePropagationBase::ComputePatchRegions()
 {
-  this->ComputeSourcePatchRegions(pixels);
-  this->ComputeTargetPatchRegions(pixels);
+  this->ComputeSourcePatchRegions();
+  this->ComputeTargetPatchRegions();
 }

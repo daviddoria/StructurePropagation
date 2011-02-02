@@ -10,6 +10,8 @@ QT4_WRAP_CPP(MOCSrcs form.h ProgressThread.h)
 
 include_directories(${include_directories} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DQT_NO_KEYWORDS")
+
 FIND_PACKAGE(VTK REQUIRED)
 INCLUDE( ${USE_VTK_FILE} )
 
@@ -23,10 +25,11 @@ FILE(GLOB OpenGM_Headers ${OpenGM_IncludePath}/opengm/* ${OpenGM_IncludePath}/op
 
 
 ADD_EXECUTABLE(StructurePropagation main.cpp form.cpp ProgressThread.cpp
-${OpenGM_Headers}
+#${OpenGM_Headers}
 vtkScribbleInteractorStyle.cxx Helpers.cpp StructurePropagationBase.cpp
 ${MOCSrcs} ${UISrcs})
+
 TARGET_LINK_LIBRARIES(StructurePropagation vtkHybrid vtkWidgets
 QVTK ${QT_LIBRARIES}
-ITKCommon ITKIO ITKStatistics
+ITKCommon ITKIO# ITKStatistics
 )

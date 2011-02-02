@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 void CProgressThread::run()
 {
   // When the thread is started, emit the signal to start the marquee progress bar
-  emit StartProgressSignal();
+  Q_EMIT StartProgressSignal();
 
   //this->GraphCut->PerformSegmentation();
 
@@ -34,5 +34,5 @@ void CProgressThread::run()
 void CProgressThread::exit()
 {
   // When the thread is stopped, emit the signal to stop the marquee progress bar
-  emit StopProgressSignal();
+  Q_EMIT StopProgressSignal();
 }

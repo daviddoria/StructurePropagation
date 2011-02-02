@@ -1,12 +1,19 @@
 #include "Helpers.h"
 #include "Types.h"
 
-#include "itkImageRegionIterator.h"
+// ITK
+#include "itkBinaryBallStructuringElement.h"
+#include "itkBinaryDilateImageFilter.h"
 #include "itkBresenhamLine.h"
 #include "itkImageRegionConstIterator.h"
+#include "itkImageRegionIterator.h"
 #include "itkImageFileWriter.h"
 
+// VITK
 #include <vtkPolyData.h>
+
+namespace Helpers
+{
 
 double SumOfShortestDistances(std::vector<itk::Index<2> > indices1, std::vector<itk::Index<2> > indices2)
 {
@@ -132,7 +139,7 @@ void MaskImage(vtkSmartPointer<vtkImageData> VTKImage, vtkSmartPointer<vtkImageD
 
 // Specialization for image types with pixel types without [] operator
 template <>
-void ITKImagetoVTKImage<UnsignedCharScalarImageType>(UnsignedCharScalarImageType::Pointer image, vtkImageData* outputImage)
+void ITKImageToVTKImage<UnsignedCharScalarImageType>(UnsignedCharScalarImageType::Pointer image, vtkSmartPointer<vtkImageData> outputImage)
 {
   // Setup and allocate the image data
   outputImage->SetNumberOfScalarComponents(1);
@@ -153,6 +160,41 @@ void ITKImagetoVTKImage<UnsignedCharScalarImageType>(UnsignedCharScalarImageType
                                                                                      imageIterator.GetIndex()[1],0));
     pixel[0] = static_cast<unsigned char>(imageIterator.Get());
     ++imageIterator;
+    }
+}
+
+void VTKImageToITKImage(vtkImageData* image, UnsignedCharScalarImageType::Pointer outputImage)
+{
+  if(image->GetNumberOfScalarComponents() > 1)
+    {
+    std::cerr << "VTKImagetoITKImage only handles images with 1 component!" << std::endl;
+    return;
+    }
+  int dims[3];
+  image->GetDimensions(dims);
+
+  itk::Size<2> size;
+  size[0] = dims[0];
+  size[1] = dims[1];
+
+  itk::Index<2> index;
+  index.Fill(0);
+
+  itk::ImageRegion<2> region(index, size);
+  outputImage->SetRegions(region);
+  outputImage->Allocate();
+
+  for(unsigned int i = 0; i < static_cast<unsigned int>(dims[0]); i++)
+    {
+    for(unsigned int j = 0; j < static_cast<unsigned int>(dims[1]); j++)
+      {
+      itk::Index<2> pixel;
+      pixel[0] = i;
+      pixel[1] = j;
+
+      unsigned char* value = static_cast<unsigned char*>(image->GetScalarPointer(pixel[0], pixel[1],0));
+      outputImage->SetPixel(pixel, value[0]);
+      }
     }
 }
 
@@ -214,3 +256,42 @@ std::vector<itk::Index<2> > BinaryImageToPixelList(UnsignedCharScalarImageType::
     }
   return pixelList;
 }
+
+unsigned int CountNonZeroPixels(UnsignedCharScalarImageType::Pointer image)
+{
+  itk::ImageRegionConstIterator<UnsignedCharScalarImageType> imageIterator(image, image->GetLargestPossibleRegion());
+  unsigned int count = 0;
+  while(!imageIterator.IsAtEnd())
+    {
+    if(imageIterator.Get() > 0)
+      {
+      count++;
+      }
+
+    ++imageIterator;
+    }
+
+  return count;
+}
+
+
+void GetDilatedImage(UnsignedCharScalarImageType::Pointer inputImage, UnsignedCharScalarImageType::Pointer dilatedImage)
+{
+  typedef itk::BinaryBallStructuringElement<UnsignedCharScalarImageType::PixelType,2> StructuringElementType;
+  StructuringElementType structuringElement;
+  structuringElement.SetRadius(2);
+  structuringElement.CreateStructuringElement();
+
+  typedef itk::BinaryDilateImageFilter <UnsignedCharScalarImageType, UnsignedCharScalarImageType, StructuringElementType>
+          BinaryDilateImageFilterType;
+
+  BinaryDilateImageFilterType::Pointer dilateFilter = BinaryDilateImageFilterType::New();
+  dilateFilter->SetInput(inputImage);
+  dilateFilter->SetKernel(structuringElement);
+  dilateFilter->Update();
+
+  dilatedImage->Graft(dilateFilter->GetOutput());
+
+}
+
+} // end namespace

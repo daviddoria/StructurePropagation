@@ -1,6 +1,6 @@
 // Convert an ITK image to a VTK image for display
 template <typename TImageType>
-void ITKImagetoVTKImage(typename TImageType::Pointer image, vtkImageData* outputImage)
+void ITKImageToVTKImage(typename TImageType::Pointer image, vtkSmartPointer<vtkImageData> outputImage)
 {
   // Setup and allocate the image data
   outputImage->SetNumberOfScalarComponents(TImageType::PixelType::GetNumberOfComponents());

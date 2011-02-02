@@ -39,9 +39,13 @@ Image Completion With Structure Propagation
 #include <vtkImageActor.h>
 #include <vtkImageData.h>
 #include <vtkImageMapToColors.h>
+#include <vtkImageStencilToImage.h>
 #include <vtkInteractorStyleImage.h>
 #include <vtkLookupTable.h>
 #include <vtkPolyData.h>
+#include <vtkPolyDataMapper.h>
+#include <vtkPolyDataToImageStencil.h>
+#include <vtkProperty.h>
 #include <vtkRenderer.h>
 #include <vtkRendererCollection.h>
 #include <vtkRenderWindow.h>
@@ -60,18 +64,23 @@ Form::Form(QWidget *parent)
   connect( this->actionOpen_Color_Image, SIGNAL( triggered() ), this, SLOT(actionOpen_Color_Image_triggered()) );
   connect( this->actionOpen_Grayscale_Image, SIGNAL( triggered() ), this, SLOT(actionOpen_Grayscale_Image_triggered()) );
 
+  // Buttons
   connect( this->btnPropagate, SIGNAL( clicked() ), this, SLOT(btnPropagate_clicked()));
   connect( this->btnLoadMask, SIGNAL( clicked() ), this, SLOT(btnLoadMask_clicked()));
-
-  connect( this->actionFlip_Image, SIGNAL( triggered() ), this, SLOT(actionFlip_Image_triggered()));
-  connect( this->actionSave_Result, SIGNAL( triggered() ), this, SLOT(actionSave_Result_triggered()));
   connect( this->btnClearStrokes, SIGNAL( clicked() ), this, SLOT(btnClearStrokes_clicked()));
   connect( this->btnSaveStrokes, SIGNAL( clicked() ), this, SLOT(btnSaveStrokes_clicked()));
+
+  // Radio buttons
+  //connect( this->radDrawHole, SIGNAL( clicked() ), this, SLOT(radDrawHole_clicked()) );
+  //connect( this->radDrawPropagationLine, SIGNAL( clicked() ), this, SLOT(radDrawPropagationLine_clicked()) );
+
+  // Menu
+  connect( this->actionFlip_Image, SIGNAL( triggered() ), this, SLOT(actionFlip_Image_triggered()));
+  connect( this->actionSave_Result, SIGNAL( triggered() ), this, SLOT(actionSave_Result_triggered()));
+
+  // Thread
   connect(&ProgressThread, SIGNAL(StartProgressSignal()), this, SLOT(StartProgressSlot()), Qt::QueuedConnection);
   connect(&ProgressThread, SIGNAL(StopProgressSignal()), this, SLOT(StopProgressSlot()), Qt::QueuedConnection);
-
-  // Testing
-  connect( this->btnExtractPatches, SIGNAL( clicked() ), this, SLOT(btnExtractPatches_clicked()));
 
   // Set the progress bar to marquee mode
   this->progressBar->setMinimum(0);
@@ -118,7 +127,18 @@ Form::Form(QWidget *parent)
   this->qvtkWidgetLeft->GetInteractor()->SetInteractorStyle(this->ScribbleInteractorStyle);
 
   this->StructurePropagationFilter = NULL;
+  this->Mask = UnsignedCharScalarImageType::New();
 
+  this->ColorPropagationPathPolyData = vtkSmartPointer<vtkPolyData>::New();
+  this->ColorPropagationPathMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+  this->ColorPropagationPathMapper->SetInputConnection(this->ColorPropagationPathPolyData->GetProducerPort());
+  this->ColorPropagationPathActor = vtkSmartPointer<vtkActor>::New();
+  this->ColorPropagationPathActor->SetMapper(this->ColorPropagationPathMapper);
+  this->ColorPropagationPathActor->GetProperty()->SetLineWidth(4);
+  this->ColorPropagationPathActor->GetProperty()->SetColor(0,1,0);
+  this->LeftRenderer->AddActor(this->ColorPropagationPathActor);
+
+  this->ScribbleInteractorStyle->StrokeUpdated.connect(boost::bind(&Form::StrokeUpdated, this, _1, _2));
 }
 
 void Form::btnLoadMask_clicked()
@@ -145,12 +165,11 @@ void Form::btnLoadMask_clicked()
   reader->SetFileName(filename.toStdString());
   reader->Update();
 
-  // Give the mask to the structure propagation algorithm
-  this->StructurePropagationFilter->SetMask(reader->GetOutput());
+  this->Mask->Graft(reader->GetOutput());
 
   vtkSmartPointer<vtkImageData> VTKMaskImage =
     vtkSmartPointer<vtkImageData>::New();
-  ITKImagetoVTKImage<UnsignedCharScalarImageType>(reader->GetOutput(), VTKMaskImage);
+  Helpers::ITKImageToVTKImage<UnsignedCharScalarImageType>(reader->GetOutput(), VTKMaskImage);
 
   vtkSmartPointer<vtkLookupTable> lookupTable =
     vtkSmartPointer<vtkLookupTable>::New();
@@ -225,21 +244,7 @@ void Form::StopProgressSlot()
 
 void Form::btnClearStrokes_clicked()
 {
-  this->ScribbleInteractorStyle->ClearStrokes();
-}
-
-void Form::btnExtractPatches_clicked()
-{
-  // This is just for testing - ExtractPatches should actually be called at the beginning of PropagateStructure
-  this->StructurePropagationFilter->ComputePatchRegions(this->ScribbleInteractorStyle->GetColorStrokes());
-
-  // The rest of this function is outputs for testing
-  UnsignedCharScalarImageType::Pointer strokeImage = UnsignedCharScalarImageType::New();
-  this->ScribbleInteractorStyle->GetStrokeImage(strokeImage);
-  this->StructurePropagationFilter->SetPropagationLine(strokeImage);
-
-  WriteWhitePatches(this->ImageRegion, this->StructurePropagationFilter->GetSourcePatchRegions(), "SourcePatches.png");
-  WriteWhitePatches(this->ImageRegion, this->StructurePropagationFilter->GetTargetPatchRegions(), "TargetPatches.png");
+  this->ColorPropagationLine.clear();
 }
 
 void Form::btnSaveStrokes_clicked()
@@ -253,8 +258,7 @@ void Form::btnSaveStrokes_clicked()
 
   // Get image of stroke from scribble interactor style
   UnsignedCharScalarImageType::Pointer colorStrokeImage = UnsignedCharScalarImageType::New();
-  //this->ScribbleInteractorStyle->GetStrokeImage(colorStrokeImage);
-  this->ScribbleInteractorStyle->GetDilatedStrokeImage(colorStrokeImage);
+  Helpers::IndicesToBinaryImage(this->ColorPropagationLine, colorStrokeImage);
 
   typedef  itk::ImageFileWriter< UnsignedCharScalarImageType  > WriterType;
   WriterType::Pointer writer = WriterType::New();
@@ -267,8 +271,13 @@ void Form::btnSaveStrokes_clicked()
 
 void Form::btnPropagate_clicked()
 {
-  this->StructurePropagationFilter->ComputePatchRegions(this->ScribbleInteractorStyle->GetColorStrokes());
+  // Give the data to the structure propagation algorithm
+  this->StructurePropagationFilter->SetMask(this->Mask);
+  this->StructurePropagationFilter->SetPatchRadius(3);
+  this->StructurePropagationFilter->SetPropagationLine(this->ColorPropagationLine);
+
   this->StructurePropagationFilter->PropagateStructure();
+  //this->StructurePropagationFilter->PropagateStructure<ColorImageType>();
 
 }
 
@@ -363,7 +372,7 @@ void Form::OpenFile()
     }
 
   // Clear the scribbles
-  this->ScribbleInteractorStyle->ClearStrokes();
+  //this->ScribbleInteractorStyle->ClearStrokes();
 
   // Read file
   typename itk::ImageFileReader<TImageType>::Pointer reader = itk::ImageFileReader<TImageType>::New();
@@ -386,7 +395,7 @@ void Form::OpenFile()
   // Convert the ITK image to a VTK image and display it
   vtkSmartPointer<vtkImageData> VTKImage =
     vtkSmartPointer<vtkImageData>::New();
-  ITKImagetoVTKImage<TImageType>(reader->GetOutput(), VTKImage);
+  Helpers::ITKImageToVTKImage<TImageType>(reader->GetOutput(), VTKImage);
 
   this->LeftRenderer->RemoveAllViewProps();
 
@@ -408,4 +417,60 @@ void Form::Refresh()
   this->qvtkWidgetLeft->GetRenderWindow()->Render();
   this->qvtkWidgetRight->GetInteractor()->Render();
   this->qvtkWidgetLeft->GetInteractor()->Render();
+}
+
+void Form::StrokeUpdated(vtkPolyData* path, bool closed)
+{
+  std::cout << "Form::StrokeUpdated" << std::endl;
+  if(this->radDrawHole->isChecked())
+    {
+    UpdateMaskFromStroke(path, closed);
+    }
+  else if(this->radDrawPropagationLine->isChecked())
+    {
+    UpdateColorPropagationLineFromStroke(path);
+    }
+}
+
+
+void Form::UpdateColorPropagationLineFromStroke(vtkPolyData* polyDataPath)
+{
+  // For now, we only store one path at a time. In the future, we'd want use a std::vector<std::vector<itk::Index<2> > > paths
+  // and do this->Paths.push_back(path);
+
+  //this->ColorPropagationPathActor->SetInput(polyDataPath);
+  this->ColorPropagationPathPolyData->ShallowCopy(polyDataPath);
+  std::cout << this->ColorPropagationPathPolyData->GetNumberOfPoints() << " points." << std::endl;
+
+  std::vector<itk::Index<2> > path = Helpers::PolyDataToPixelList(polyDataPath);
+  this->ColorPropagationLine = path;
+
+  this->LeftRenderer->AddActor(this->ColorPropagationPathActor);
+  this->Refresh();
+}
+
+void Form::UpdateMaskFromStroke(vtkPolyData* path, bool closed)
+{
+  // We need a VTK image to get the spacing, origin, and extent only
+  vtkSmartPointer<vtkImageData> image = vtkSmartPointer<vtkImageData>::New();
+  Helpers::ITKImageToVTKImage<UnsignedCharScalarImageType>(this->Mask, image);
+
+  vtkSmartPointer<vtkPolyDataToImageStencil> polyDataToImageStencil =
+    vtkSmartPointer<vtkPolyDataToImageStencil>::New();
+  polyDataToImageStencil->SetTolerance(0);
+  polyDataToImageStencil->SetInputConnection(path->GetProducerPort());
+  polyDataToImageStencil->SetOutputOrigin(image->GetOrigin());
+  polyDataToImageStencil->SetOutputSpacing(image->GetSpacing());
+  polyDataToImageStencil->SetOutputWholeExtent(image->GetExtent());
+  polyDataToImageStencil->Update();
+
+  vtkSmartPointer<vtkImageStencilToImage> imageStencilToImage =
+    vtkSmartPointer<vtkImageStencilToImage>::New();
+  imageStencilToImage->SetInputConnection(polyDataToImageStencil->GetOutputPort());
+  imageStencilToImage->SetInsideValue(255);
+  imageStencilToImage->Update();
+
+  UnsignedCharScalarImageType::Pointer mask = UnsignedCharScalarImageType::New();
+  Helpers::VTKImageToITKImage(imageStencilToImage->GetOutput(), mask);
+
 }

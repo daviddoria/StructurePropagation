@@ -15,11 +15,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "itkRegionOfInterestImageFilter.h"
+#include "itkCastImageFilter.h"
 #include "itkContourMeanDistanceImageFilter.h"
-#include "itkPasteImageFilter.h"
 #include "itkImageDuplicator.h"
 #include "itkImageFileWriter.h"
+#include "itkPasteImageFilter.h"
+#include "itkRegionOfInterestImageFilter.h"
 
 #include "Helpers.h"
 
@@ -51,13 +52,26 @@ void StructurePropagation<TImageType>::SetImage(typename TImageType::Pointer ima
 template <typename TImageType>
 double StructurePropagation<TImageType>::UnaryCost(int node, int label)
 {
-  return StructureCost(node, label) + CompletionCost(node, label);
+  double structureCost = StructureCost(node, label);
+  double completionCost = CompletionCost(node, label);
+
+  //std::cout << "Structure cost: " << structureCost << " " << "Completion cost: " << completionCost << std::endl;
+
+  return structureCost + completionCost;
 }
 
 template <typename TImageType>
 double StructurePropagation<TImageType>::StructureCost(int node, int label)
 {
+  //std::cout << "There are " << this->TargetStrokePaths.size() << " TargetStrokePaths." << std::endl;
+
   typedef itk::ContourMeanDistanceImageFilter <UnsignedCharScalarImageType, UnsignedCharScalarImageType> ContourMeanDistanceImageFilterType;
+
+  //std::cout << "this->TargetStrokePaths[node] has " << Helpers::CountNonZeroPixels(this->TargetStrokePaths[node]) << " non zero pixels." << std::endl;
+  //std::cout << "this->SourceStrokePaths[label] has " << Helpers::CountNonZeroPixels(this->SourceStrokePaths[label]) << " non zero pixels." << std::endl;
+
+  assert(Helpers::CountNonZeroPixels(this->TargetStrokePaths[node]) > 0);
+  assert(Helpers::CountNonZeroPixels(this->SourceStrokePaths[label]) > 0);
 
   typename ContourMeanDistanceImageFilterType::Pointer contourMeanDistanceImageFilter =
     ContourMeanDistanceImageFilterType::New();
@@ -86,7 +100,7 @@ double StructurePropagation<TImageType>::CompletionCost(int node, int label)
       // Get the value of the current pixel
       typename TImageType::PixelType pixel1 = imageIterator.Get();
       typename TImageType::PixelType pixel2 = patchIterator.Get();
-      ssd += difference(pixel1, pixel2);
+      ssd += Helpers::difference(pixel1, pixel2);
       numberOfPixels++;
       }
 
@@ -94,8 +108,14 @@ double StructurePropagation<TImageType>::CompletionCost(int node, int label)
     ++maskIterator;
     ++patchIterator;
     }
-
-  return ssd/numberOfPixels;
+  if(numberOfPixels <= 0)
+    {
+    return 0;
+    }
+  else
+    {
+    return ssd/numberOfPixels;
+    }
 }
 
 template <typename TImageType>
@@ -129,17 +149,34 @@ double StructurePropagation<TImageType>::BinaryCost(int node1, int node2, int la
     typename TImageType::PixelType pixel1 = patch1Iterator.Get();
     typename TImageType::PixelType pixel2 = patch2Iterator.Get();
     //ssd += difference<typename TImageType::PixelType>(pixel1, pixel2);
-    ssd += difference(pixel1, pixel2);
+    ssd += Helpers::difference(pixel1, pixel2);
 
     ++patch1Iterator;
     ++patch2Iterator;
     }
-  return ssd;
+
+  std::cout << "Binary cost for nodes " << node1 << " and " << node2 << " with labels " << label1 << " and " << label2 << " is " << ssd << std::endl;
+
+  if(ssd <= 0)
+    {
+    return 0.0;
+    }
+  else
+    {
+    return ssd/static_cast<double>(overlapRegion1.GetNumberOfPixels());
+    }
 }
 
 template <typename TImageType>
 void StructurePropagation<TImageType>::PropagateStructure()
 {
+  //std::cout << "TImageType has " << TImageType::PixelType::GetNumberOfComponents() << " components." << std::endl;
+
+  this->PropagationLineImage->SetRegions(this->Mask->GetLargestPossibleRegion());
+  this->PropagationLineImage->Allocate();
+  Helpers::IndicesToBinaryImage(this->PropagationLine, this->PropagationLineImage);
+
+  ComputePatchRegions();
   ExtractRegionsOfPropagationPath();
 
   // Create the graphical model
@@ -152,15 +189,19 @@ void StructurePropagation<TImageType>::PropagateStructure()
 
   // Create all unary factors
   std::cout << "Creating unary factors..." << std::endl;
+  //std::cout << "There are " << numberOfNodes << " nodes." << std::endl;
+  //std::cout << "There are " << numberOfLabels << " labels." << std::endl;
   for(unsigned int node = 0; node < numberOfNodes; node++)
     {
     std::vector<size_t> unaryIndices(1, node);
     Factor unaryFactor(space, unaryIndices.begin(), unaryIndices.end());
     for(unsigned int label = 0; label < numberOfLabels; label++)
       {
-      unaryFactor(label) = UnaryCost(node, label);
-      std::cout << "The cost of assigning node " << node << " = " << label << " is " << unaryFactor(label) << std::endl;
+      double cost = UnaryCost(node, label);
+      unaryFactor(label) = cost;
+      //std::cout << "The cost of assigning node " << node << " = " << label << " is " << unaryFactor(label) << std::endl;
       }
+
     gm.addFactor(unaryFactor);
     }
 
@@ -198,19 +239,19 @@ void StructurePropagation<TImageType>::PropagateStructure()
   std::cout << "Best labeling:" << std::endl;
   for(unsigned int i = 0; i < result.size(); i++)
     {
-    std::cout << result[i] << " " ;
+    std::cout << "Node " << i << " label " << result[i] << std::endl;
     }
 
   // Fill in the image with the best patches
-  typedef itk::PasteImageFilter <TImageType, TImageType >
-    PasteImageFilterType;
-
   typedef itk::ImageDuplicator< TImageType > ImageDuplicatorType;
   typename ImageDuplicatorType::Pointer duplicator = ImageDuplicatorType::New();
   duplicator->SetInputImage(this->Image);
   duplicator->Update();
 
   typename TImageType::Pointer outputImage = duplicator->GetOutput();
+
+  typedef itk::PasteImageFilter <TImageType, TImageType >
+    PasteImageFilterType;
 
   for(unsigned int i = 0; i < numberOfNodes; i++)
     {
@@ -228,10 +269,17 @@ void StructurePropagation<TImageType>::PropagateStructure()
     outputImage->Graft(pasteFilter->GetOutput());
     }
 
-  typedef  itk::ImageFileWriter< TImageType > WriterType;
+  typedef itk::CovariantVector<unsigned char,TImageType::PixelType::Dimension> UnsignedCharVectorPixelType;
+  typedef itk::Image<UnsignedCharVectorPixelType, 2> UnsignedCharVectorImageType;
+
+  typedef itk::CastImageFilter< TImageType, UnsignedCharVectorImageType > CastFilterType;
+  typename CastFilterType::Pointer castFilter = CastFilterType::New();
+  castFilter->SetInput(outputImage);
+
+  typedef  itk::ImageFileWriter< UnsignedCharVectorImageType > WriterType;
   typename WriterType::Pointer writer = WriterType::New();
   writer->SetFileName("result.png");
-  writer->SetInput(outputImage);
+  writer->SetInput(castFilter->GetOutput());
   writer->Update();
-}
 
+}

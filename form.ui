@@ -90,8 +90,8 @@ QGroupBox#grpSelection::title {
         <widget class="QPushButton" name="btnPropagate">
          <property name="geometry">
           <rect>
-           <x>240</x>
-           <y>80</y>
+           <x>270</x>
+           <y>120</y>
            <width>151</width>
            <height>41</height>
           </rect>
@@ -103,8 +103,8 @@ QGroupBox#grpSelection::title {
         <widget class="QProgressBar" name="progressBar">
          <property name="geometry">
           <rect>
-           <x>260</x>
-           <y>130</y>
+           <x>290</x>
+           <y>170</y>
            <width>118</width>
            <height>23</height>
           </rect>
@@ -113,30 +113,79 @@ QGroupBox#grpSelection::title {
           <number>24</number>
          </property>
         </widget>
-        <widget class="QPushButton" name="btnExtractPatches">
-         <property name="geometry">
-          <rect>
-           <x>50</x>
-           <y>60</y>
-           <width>111</width>
-           <height>31</height>
-          </rect>
-         </property>
-         <property name="text">
-          <string>Extract patches</string>
-         </property>
-        </widget>
         <widget class="QPushButton" name="btnLoadMask">
          <property name="geometry">
           <rect>
-           <x>220</x>
-           <y>20</y>
+           <x>30</x>
+           <y>110</y>
            <width>91</width>
            <height>27</height>
           </rect>
          </property>
          <property name="text">
           <string>Load Mask</string>
+         </property>
+        </widget>
+        <widget class="QRadioButton" name="radDrawHole">
+         <property name="geometry">
+          <rect>
+           <x>170</x>
+           <y>60</y>
+           <width>106</width>
+           <height>22</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Draw hole</string>
+         </property>
+        </widget>
+        <widget class="QRadioButton" name="radDrawPropagationLine">
+         <property name="geometry">
+          <rect>
+           <x>170</x>
+           <y>80</y>
+           <width>171</width>
+           <height>22</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Draw propagation line</string>
+         </property>
+         <property name="checked">
+          <bool>true</bool>
+         </property>
+        </widget>
+        <widget class="QLabel" name="label">
+         <property name="geometry">
+          <rect>
+           <x>180</x>
+           <y>40</y>
+           <width>59</width>
+           <height>17</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Selection</string>
+         </property>
+        </widget>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QGroupBox" name="groupBox">
+        <property name="title">
+         <string>GroupBox</string>
+        </property>
+        <widget class="QPushButton" name="btnExtractPatches">
+         <property name="geometry">
+          <rect>
+           <x>60</x>
+           <y>80</y>
+           <width>111</width>
+           <height>31</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Extract patches</string>
          </property>
         </widget>
        </widget>
@@ -151,7 +200,7 @@ QGroupBox#grpSelection::title {
      <x>0</x>
      <y>0</y>
      <width>900</width>
-     <height>24</height>
+     <height>25</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">

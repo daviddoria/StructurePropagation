@@ -23,9 +23,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <vtkCommand.h>
 #include <vtkImageActor.h>
 #include <vtkImageData.h>
+#include <vtkImageStencilToImage.h>
 #include <vtkImageTracerWidget.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper.h>
+#include <vtkPolyDataToImageStencil.h>
 #include <vtkProperty.h>
 #include <vtkObjectFactory.h>
 #include <vtkRendererCollection.h>
@@ -33,7 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <vtkRenderWindowInteractor.h>
 
 #include <itkImageRegionIterator.h>
-#include <itkBresenhamLine.h>
 #include "itkBinaryBallStructuringElement.h"
 #include "itkBinaryDilateImageFilter.h"
 
@@ -48,30 +49,9 @@ vtkScribbleInteractorStyle::vtkScribbleInteractorStyle()
   this->Tracer->GetLineProperty()->SetLineWidth(5);
   this->Tracer->HandleMiddleMouseButtonOff();
 
-  // Foreground
-  this->ColorStrokePolyData = vtkSmartPointer<vtkPolyData>::New();
-  this->ColorStrokeMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
-  this->ColorStrokeActor = vtkSmartPointer<vtkActor>::New();
-  this->ColorStrokeActor->SetMapper(this->ColorStrokeMapper);
-  this->ColorStrokeActor->GetProperty()->SetLineWidth(4);
-  this->ColorStrokeActor->GetProperty()->SetColor(0,1,0);
-  this->ColorStrokeMapper->SetInputConnection(this->ColorStrokePolyData->GetProducerPort());
-
   // Update the selection when the EndInteraction event is fired.
   this->Tracer->AddObserver(vtkCommand::EndInteractionEvent, this, &vtkScribbleInteractorStyle::CatchWidgetEvent);
 
-  // Defaults
-  this->StrokeType = COLOR;
-}
-
-std::vector<itk::Index<2> > vtkScribbleInteractorStyle::GetColorStrokes()
-{
-  return this->ColorStrokes;
-}
-
-int vtkScribbleInteractorStyle::GetStrokeType()
-{
-  return this->StrokeType;
 }
 
 void vtkScribbleInteractorStyle::InitializeTracer(vtkImageActor* imageActor)
@@ -82,62 +62,27 @@ void vtkScribbleInteractorStyle::InitializeTracer(vtkImageActor* imageActor)
   this->Tracer->ProjectToPlaneOn();
 
   this->Tracer->On();
-
-  itk::Index<2> start;
-  start.Fill(0);
-  itk::Size<2> size;
-  int dims[3];
-  imageActor->GetInput()->GetDimensions(dims);
-  size[0] = dims[0];
-  size[1] = dims[1];
-  this->ImageRegion.SetSize(size);
-  this->ImageRegion.SetIndex(start);
 }
-
-void vtkScribbleInteractorStyle::SetInteractionModeToColor()
-{
-  this->Tracer->GetLineProperty()->SetColor(0,1,0);
-  this->StrokeType = COLOR;
-}
-
 
 void vtkScribbleInteractorStyle::CatchWidgetEvent(vtkObject* caller, long unsigned int eventId, void* callData)
 {
-  // Get the path from the tracer and append it to the appropriate selection
-
-  this->Interactor->GetRenderWindow()->GetRenderers()->GetFirstRenderer()->AddActor(ColorStrokeActor);
-  //this->Interactor->GetRenderWindow()->GetRenderers()->GetFirstRenderer()->AddActor(ForegroundSelectionActor);
-
   // Get the tracer object (this is the object that triggered this event)
   vtkImageTracerWidget* tracer =
     static_cast<vtkImageTracerWidget*>(caller);
 
-  // Get the points in the selection
   vtkSmartPointer<vtkPolyData> path =
     vtkSmartPointer<vtkPolyData>::New();
   tracer->GetPath(path);
 
-  // Create a filter which will be used to combine the most recent selection with previous selections
-  vtkSmartPointer<vtkAppendPolyData> appendFilter =
-    vtkSmartPointer<vtkAppendPolyData>::New();
-  appendFilter->AddInputConnection(path->GetProducerPort());
+  this->StrokeUpdated(path, tracer->IsClosed());
 
-  std::vector<itk::Index<2> > newPoints = PolyDataToPixelList(path);
-  //std::cout << newPoints.size() << " new points." << std::endl;
+  ClearTracer();
 
-  // If we are in foreground mode, add the current selection to the foreground. Else, add it to the background.
-  if(this->StrokeType == vtkScribbleInteractorStyle::COLOR)
-    {
-    appendFilter->AddInputConnection(this->ColorStrokePolyData->GetProducerPort());
-    appendFilter->Update();
-    this->ColorStrokePolyData->ShallowCopy(appendFilter->GetOutput());
+};
 
-    this->ColorStrokes.insert(this->ColorStrokes.end(), newPoints.begin(), newPoints.end());
-    }
 
-  //std::cout << this->ForegroundSelection.size() << " foreground poitns." << std::endl;
-  //std::cout << this->BackgroundSelection.size() << " background poitns." << std::endl;
-
+void vtkScribbleInteractorStyle::ClearTracer()
+{
   // "Clear" the tracer. We must rely on the foreground and background actors to maintain the appropriate colors.
   // If we did not clear the tracer, if we draw a foreground stroke (green) then switch to background mode, the last stoke would turn
   // red until we finished drawing the next stroke.
@@ -150,70 +95,10 @@ void vtkScribbleInteractorStyle::CatchWidgetEvent(vtkObject* caller, long unsign
   this->Tracer->Modified();
 
   this->Refresh();
-
-};
+}
 
 void vtkScribbleInteractorStyle::Refresh()
 {
   this->Interactor->GetRenderWindow()->GetRenderers()->GetFirstRenderer()->Render();
   this->Interactor->GetRenderWindow()->Render();
-}
-
-void vtkScribbleInteractorStyle::ClearStrokes()
-{
-  /*
-   // I thought this would work...
-  this->BackgroundSelection->Reset();
-  this->BackgroundSelection->Squeeze();
-  this->BackgroundSelection->Modified();
-
-  this->ForegroundSelection->Reset();
-  this->ForegroundSelection->Squeeze();
-  this->ForegroundSelection->Modified();
-  */
-
-  // This seems like a silly way of emptying the polydatas...
-  vtkSmartPointer<vtkPolyData> empytPolyData =
-    vtkSmartPointer<vtkPolyData>::New();
-  this->ColorStrokePolyData->ShallowCopy(empytPolyData);
-
-  this->ColorStrokes.clear();
-
-  this->Refresh();
-}
-
-
-
-void vtkScribbleInteractorStyle::GetStrokeImage(UnsignedCharScalarImageType::Pointer image)
-{
-  image->SetRegions(this->ImageRegion);
-  image->Allocate();
-  image->FillBuffer(itk::NumericTraits<UnsignedCharScalarImageType::PixelType>::Zero);
-
-  IndicesToBinaryImage(this->ColorStrokes, image);
-}
-
-
-void vtkScribbleInteractorStyle::GetDilatedStrokeImage(UnsignedCharScalarImageType::Pointer image)
-{
-  image->SetRegions(this->ImageRegion);
-  image->Allocate();
-  image->FillBuffer(itk::NumericTraits<UnsignedCharScalarImageType::PixelType>::Zero);
-
-  IndicesToBinaryImage(this->ColorStrokes, image);
-
-  typedef itk::BinaryBallStructuringElement<UnsignedCharScalarImageType::PixelType,2> StructuringElementType;
-  StructuringElementType structuringElement;
-  structuringElement.SetRadius(2);
-  structuringElement.CreateStructuringElement();
-
-  typedef itk::BinaryDilateImageFilter <UnsignedCharScalarImageType, UnsignedCharScalarImageType, StructuringElementType>
-          BinaryDilateImageFilterType;
-
-  BinaryDilateImageFilterType::Pointer dilateFilter = BinaryDilateImageFilterType::New();
-  dilateFilter->SetInput(image);
-  dilateFilter->SetKernel(structuringElement);
-  dilateFilter->Update();
-
-  image->Graft(dilateFilter->GetOutput());
 }

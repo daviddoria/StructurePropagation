@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2010 David Doria, daviddoria@gmail.com
+Copyright (C) 2011 David Doria, daviddoria@gmail.com
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -35,19 +35,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Custom
 #include "vtkScribbleInteractorStyle.h"
-//#include "ImageGraphCutBase.h"
-//#include "ImageGraphCut.h"
 #include "ProgressThread.h"
 #include "StructurePropagation.h"
 
 // VTK
 #include <vtkSmartPointer.h>
-#include <vtkImageData.h>
+
+// Boost.Signals
+#include <boost/signals2/signal.hpp>
+#include <boost/bind.hpp>
 
 // Forward declarations
 class vtkImageActor;
 class vtkRenderer;
-class vtkImageData;
 
 class Form : public QMainWindow, private Ui::MainWindow
 {
@@ -55,27 +55,32 @@ Q_OBJECT
 public:
   Form(QWidget *parent = 0);
 
-public slots:
+public Q_SLOTS:
   // Menu items
   void actionOpen_Color_Image_triggered();
   void actionOpen_Grayscale_Image_triggered();
   void actionFlip_Image_triggered();
   void actionSave_Result_triggered();
 
-  // Buttons, radio buttons, and sliders
+  // Buttons
   void btnClearStrokes_clicked();
   void btnSaveStrokes_clicked();
   void btnPropagate_clicked();
   void btnLoadMask_clicked();
 
+  // Radio buttons
+  //void radDrawPropagationLine_clicked();
+  //void radDrawHole_clicked();
+
   // These slots handle running the progress bar while the computations are done in a separate thread.
   void StartProgressSlot();
   void StopProgressSlot();
 
-  // Testing
-  void btnExtractPatches_clicked();
-
 protected:
+
+  void StrokeUpdated(vtkPolyData* path, bool closed);
+  void UpdateMaskFromStroke(vtkPolyData* path, bool closed);
+  void UpdateColorPropagationLineFromStroke(vtkPolyData* polyDataPath);
 
   // A class to do the main computations in a separate thread so we can display a marquee progress bar.
   CProgressThread ProgressThread;
@@ -109,6 +114,15 @@ protected:
 
   // We set this when the image is opened. We sometimes need to know how big the image is.
   itk::ImageRegion<2> ImageRegion;
+
+  // Data
+  UnsignedCharScalarImageType::Pointer Mask;
+  std::vector<itk::Index<2> > ColorPropagationLine;
+
+  // Data, mapper, and actor for the selections
+  vtkSmartPointer<vtkPolyData> ColorPropagationPathPolyData;
+  vtkSmartPointer<vtkPolyDataMapper> ColorPropagationPathMapper;
+  vtkSmartPointer<vtkActor> ColorPropagationPathActor;
 
 };
 

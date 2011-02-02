@@ -39,7 +39,8 @@ public:
   // We need a pointer to this object so we can perform the computations in this thread
   //ImageGraphCutBase* GraphCut;
 
-signals:
+//signals:
+Q_SIGNALS:
   // This signal is emitted to start the progress bar
   void StartProgressSignal();
 

@@ -30,14 +30,16 @@ public:
   void SetImage(typename TImageType::Pointer image);
 
   void PropagateStructure();
-  
+
 private:
   typename TImageType::Pointer Image;
-  
+
+  typename TImageType::Pointer OutputImage;
+
   double UnaryCost(int node, int label);
   double StructureCost(int node, int label);
   double CompletionCost(int node, int label);
-  
+
   double BinaryCost(int node1, int node2, int label1, int label2);
 };
 

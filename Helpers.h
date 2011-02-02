@@ -12,6 +12,11 @@
 
 class vtkPolyData;
 
+namespace Helpers
+{
+
+void GetDilatedImage(UnsignedCharScalarImageType::Pointer inputImage, UnsignedCharScalarImageType::Pointer dilatedImage);
+
 template <typename TPixelType>
 double difference(TPixelType, TPixelType);
 
@@ -25,18 +30,24 @@ void MaskImage(vtkSmartPointer<vtkImageData> VTKImage, vtkSmartPointer<vtkImageD
 
 void WriteWhitePatches(itk::ImageRegion<2> imageRegion, std::vector<itk::ImageRegion<2> > regions, std::string filename);
 
+void VTKImageToITKImage(vtkImageData* image, UnsignedCharScalarImageType::Pointer outputImage);
+
 // Convert an ITK image to a VTK image for display
 template <typename TImageType>
-void ITKImagetoVTKImage(typename TImageType::Pointer image, vtkImageData* outputImage);
+void ITKImageToVTKImage(typename TImageType::Pointer image, vtkSmartPointer<vtkImageData> outputImage);
 
 // Specialization for image types with pixel types without [] operator
 template <>
-void ITKImagetoVTKImage<UnsignedCharScalarImageType>(UnsignedCharScalarImageType::Pointer image, vtkImageData* outputImage);
+void ITKImageToVTKImage<UnsignedCharScalarImageType>(UnsignedCharScalarImageType::Pointer image, vtkSmartPointer<vtkImageData> outputImage);
 
 std::vector<itk::Index<2> > PolyDataToPixelList(vtkPolyData* polydata);
+
+unsigned int CountNonZeroPixels(UnsignedCharScalarImageType::Pointer image);
 
 std::vector<itk::Index<2> > BinaryImageToPixelList(UnsignedCharScalarImageType::Pointer image);
 
 #include "Helpers.txx"
+
+} // end namespace
 
 #endif

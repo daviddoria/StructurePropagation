@@ -16,42 +16,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 /*
- * This class is responsible for the user interaction with the input image.
- * A vtkImageTracerWidget does most of the work, but this class appends and maintains
- * the selections.
+ * This class emits a signal when the users scribbles on the image.
 */
 
 #ifndef vtkScribbleInteractorStyle_H
 #define vtkScribbleInteractorStyle_H
 
+// VTK
 #include <vtkImageTracerWidget.h>
 #include <vtkInteractorStyleImage.h> // superclass
 #include <vtkSmartPointer.h>
 
-#include "itkImageRegion.h"
-
-#include "Types.h"
+// Boost
+#include <boost/signals2/signal.hpp>
 
 class vtkImageActor;
-class vtkImageData;
-class vtkPolyData;
 
 class vtkScribbleInteractorStyle : public vtkInteractorStyleImage
 {
 public:
+  boost::signals2::signal<void (vtkPolyData*, bool)> StrokeUpdated;
+
   static vtkScribbleInteractorStyle* New();
   vtkTypeMacro(vtkScribbleInteractorStyle, vtkInteractorStyleImage);
 
   vtkScribbleInteractorStyle();
-
-  int GetStrokeType();
-  enum SELECTION {COLOR};
-
-  // A named function to set the SelectionType
-  void SetInteractionModeToColor();
-
-  // Get the strokes
-  std::vector<itk::Index<2> > GetColorStrokes();
 
   // Clear all strokes
   void ClearStrokes();
@@ -59,38 +48,17 @@ public:
   // Connect the tracer to the interactor, etc.
   void InitializeTracer(vtkImageActor* imageActor);
 
-  // Get an image the size of the input image with a black background
-  // and white pixels indicating the stroke
-  void GetStrokeImage(UnsignedCharScalarImageType::Pointer image);
-
-  // Get an image the size of the input image with a black background
-  // and white pixels indicating a dilated representation of the stroke
-  void GetDilatedStrokeImage(UnsignedCharScalarImageType::Pointer image);
-
 private:
   void Refresh();
+
+  void ClearTracer();
 
   // Update the selection when the EndInteraction event is fired.
   void CatchWidgetEvent(vtkObject* caller, long unsigned int eventId, void* callData);
 
-  // The type of stroke currently selected.
-  int StrokeType;
-
   // The widget which does most of the work.
   vtkSmartPointer<vtkImageTracerWidget> Tracer;
 
-  // Keep track of the pixels the user selected.
-  std::vector<itk::Index<2> > ColorStrokes;
-
-  // Data, mapper, and actor for the selections
-  vtkSmartPointer<vtkPolyData> ColorStrokePolyData;
-
-  vtkSmartPointer<vtkPolyDataMapper> ColorStrokeMapper;
-
-  vtkSmartPointer<vtkActor> ColorStrokeActor;
-
-  // We want to be able to access images of the strokes
-  itk::ImageRegion<2> ImageRegion;
 };
 
 #endif
