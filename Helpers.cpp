@@ -9,11 +9,72 @@
 #include "itkImageRegionIterator.h"
 #include "itkImageFileWriter.h"
 
-// VITK
+// VTK
 #include <vtkPolyData.h>
 
 namespace Helpers
 {
+
+bool IsIntersectTargetRegion(itk::ImageRegion<2> patch, UnsignedCharScalarImageType::Pointer mask)
+{
+  itk::ImageRegionConstIterator<UnsignedCharScalarImageType> imageIterator(mask, patch);
+
+  while(!imageIterator.IsAtEnd())
+    {
+    if(imageIterator.Get() > 0) // the mask is non-zero
+      {
+      return true;
+      }
+    ++imageIterator;
+    }
+
+  return false;
+}
+
+bool IsValidPatch(itk::ImageRegion<2> patch, UnsignedCharScalarImageType::Pointer mask)
+{
+  // The patch must be entirely within the image
+  if(!mask->GetLargestPossibleRegion().IsInside(patch))
+    {
+    return false;
+    }
+
+  // There must be zero masked (invalid) pixels
+  itk::ImageRegionConstIterator<UnsignedCharScalarImageType> imageIterator(mask, patch);
+
+  bool validRegion = true;
+  while(!imageIterator.IsAtEnd())
+    {
+    if(imageIterator.Get() > 0) // the mask is non-zero
+      {
+      return false;
+      }
+    ++imageIterator;
+    }
+
+  return true;
+}
+
+itk::Index<2> GetCorner(itk::Index<2> center, unsigned int radius)
+{
+  itk::Index<2> corner;
+  corner[0] = center[0] - radius;
+  corner[1] = center[1] - radius;
+
+  return corner;
+}
+
+itk::ImageRegion<2> GetCenteredRegionRadius(itk::Index<2> centerPixel, unsigned int radius)
+{
+  itk::Size<2> size;
+  size.Fill(radius*2 + 1);
+
+  itk::Index<2> corner;
+  corner[0] = centerPixel[0] - radius;
+  corner[1] = centerPixel[1] - radius;
+
+  return itk::ImageRegion<2>(corner, size);
+}
 
 double SumOfShortestDistances(std::vector<itk::Index<2> > indices1, std::vector<itk::Index<2> > indices2)
 {
@@ -239,6 +300,30 @@ std::vector<itk::Index<2> > PolyDataToPixelList(vtkPolyData* polydata)
   return allIndices;
 }
 
+
+void DrawLineInImage(UnsignedCharScalarImageType::Pointer image, itk::Index<2> p0, itk::Index<2> p1)
+{
+  // Currently need the distance between the points for Bresenham (pending patch in Gerrit)
+  itk::Point<float,2> point0;
+  itk::Point<float,2> point1;
+  for(unsigned int i = 0; i < 2; i++)
+    {
+    point0[i] = p0[i];
+    point1[i] = p1[i];
+    }
+    
+  float distance = point0.EuclideanDistanceTo(point1);
+  itk::BresenhamLine<2> line;
+  std::vector<itk::Offset<2> > offsets = line.BuildLine(point1-point0, distance);
+  //std::cout << "There are " << offsets.size() << " pixels to turn white in the line." << std::endl;
+  
+  for(unsigned int i = 0; i < offsets.size(); i++)
+    {
+    image->SetPixel(p0 + offsets[i], 255);
+    }
+
+}
+
 std::vector<itk::Index<2> > BinaryImageToPixelList(UnsignedCharScalarImageType::Pointer image)
 {
   std::vector<itk::Index<2> > pixelList;
@@ -292,6 +377,29 @@ void GetDilatedImage(UnsignedCharScalarImageType::Pointer inputImage, UnsignedCh
 
   dilatedImage->Graft(dilateFilter->GetOutput());
 
+}
+
+void NumberPixels(UnsignedCharScalarImageType::Pointer binaryImage, IntScalarImageType::Pointer numberedPixels)
+{
+  itk::ImageRegionConstIterator<UnsignedCharScalarImageType> imageIterator(binaryImage, binaryImage->GetLargestPossibleRegion());
+  itk::ImageRegionIterator<IntScalarImageType> numberedPixelsIterator(numberedPixels, numberedPixels->GetLargestPossibleRegion());
+
+  int counter = 0;
+  while(!imageIterator.IsAtEnd())
+    {
+    if(imageIterator.Get())
+      {
+      numberedPixelsIterator.Set(counter);
+      counter++;
+      }
+    else
+      {
+      numberedPixelsIterator.Set(-1);
+      }
+
+    ++imageIterator;
+    ++numberedPixelsIterator;
+    }
 }
 
 } // end namespace

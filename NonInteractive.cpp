@@ -1,74 +1,58 @@
-#include "ImageGraphCut.h"
+/*
+Copyright (C) 2011 David Doria, daviddoria@gmail.com
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include "Types.h"
 
 #include "itkImage.h"
-#include "itkCovariantVector.h"
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
-#include "itkImageRegionConstIteratorWithIndex.h"
+#include "itkImageRegionIterator.h"
 
-std::vector<itk::Index<2> > GetMaskedPixels(UnsignedCharScalarImageType::Pointer image);
-
-int main(int argc, char*argv[])
+int main(int argc, char* argv[])
 {
-  if(argc != 5)
+  if(argc != 4)
     {
-    std::cerr << "Required: image foregroundMask backgroundMask output" << std::endl;
-    return EXIT_FAILURE;
+    std::cerr << "Required: image mask tileRadius" << std::endl;
+    exit(-1);
     }
-    
+
+  typedef itk::ImageFileReader<ColorImageType> ImageReaderType;
+  typedef itk::ImageFileReader<MaskImageType> MaskReaderType;
+
   std::string imageFilename = argv[1];
-  std::string foregroundMaskFilename = argv[2];
-  std::string backgroundMaskFilename = argv[3];
-  std::string outputFilename = argv[4]; // Foreground/background segment mask
+  std::cout << "Reading " << imageFilename << std::endl;
 
-  typedef itk::ImageFileReader<RGBDIImageType> ReaderType;
-  ReaderType::Pointer reader = ReaderType::New();
-  reader->SetFileName(imageFilename);
-  reader->Update();
+  ImageReaderType::Pointer imageReader = ImageReaderType::New();
+  imageReader->SetFileName(imageFilename);
+  imageReader->Update();
 
-  typedef itk::ImageFileReader<UnsignedCharScalarImageType> UnsignedCharReaderType;
-  UnsignedCharReaderType::Pointer foregroundMaskReader = UnsignedCharReaderType::New();
-  foregroundMaskReader->SetFileName(foregroundMaskFilename);
-  foregroundMaskReader->Update();
+  std::string maskFilename = argv[2];
+  std::cout << "Reading " << maskFilename << std::endl;
 
-  UnsignedCharReaderType::Pointer backgroundMaskReader = UnsignedCharReaderType::New();
-  backgroundMaskReader->SetFileName(backgroundMaskFilename);
-  backgroundMaskReader->Update();
-  
-  ImageGraphCut<RGBDIImageType> GraphCut(reader->GetOutput());
-  GraphCut.SetNumberOfHistogramBins(20);
-  GraphCut.SetLambda(.01);
-  std::vector<itk::Index<2> > foregroundPixels = GetMaskedPixels(foregroundMaskReader->GetOutput());
-  std::vector<itk::Index<2> > backgroundPixels = GetMaskedPixels(backgroundMaskReader->GetOutput());
-  GraphCut.SetSources(foregroundPixels);
-  GraphCut.SetSinks(backgroundPixels);
-  GraphCut.PerformSegmentation();
+  std::string strRadius = argv[3];
+  std::stringstream ss;
+  ss << strRadius;
+  int radius;
+  ss >> radius;
 
-  UnsignedCharScalarImageType* result = GraphCut.GetSegmentMask();
+  MaskReaderType::Pointer maskReader = MaskReaderType::New();
+  maskReader->SetFileName(maskFilename);
+  maskReader->Update();
 
-  typedef  itk::ImageFileWriter< MaskImageType  > WriterType;
-  WriterType::Pointer writer = WriterType::New();
-  writer->SetFileName(outputFilename);
-  writer->SetInput(result);
-  writer->Update();
+  return EXIT_SUCCESS;
 }
 
-
-std::vector<itk::Index<2> > GetMaskedPixels(UnsignedCharScalarImageType::Pointer image)
-{
-  std::vector<itk::Index<2> > pixels;
-  
-  itk::ImageRegionConstIteratorWithIndex<UnsignedCharScalarImageType> imageIterator(image,image->GetLargestPossibleRegion());
-
-  while(!imageIterator.IsAtEnd())
-    {
-    if(imageIterator.Get() != 0)
-      {
-      pixels.push_back(imageIterator.GetIndex());
-      }
-
-    ++imageIterator;
-    }
-
-  return pixels;
-}

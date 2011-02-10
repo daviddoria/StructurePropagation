@@ -17,4 +17,7 @@ typedef itk::Image<GrayscalePixelType, 2> GrayscaleImageType;
 typedef itk::Image<unsigned char, 2> UnsignedCharScalarImageType;
 typedef UnsignedCharScalarImageType MaskImageType;
 
+typedef itk::Image<int, 2> IntScalarImageType;
+
+
 #endif

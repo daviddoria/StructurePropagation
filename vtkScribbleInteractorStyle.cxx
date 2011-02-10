@@ -34,10 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <vtkRenderWindow.h>
 #include <vtkRenderWindowInteractor.h>
 
-#include <itkImageRegionIterator.h>
-#include "itkBinaryBallStructuringElement.h"
-#include "itkBinaryDilateImageFilter.h"
-
 #include "Helpers.h"
 
 vtkStandardNewMacro(vtkScribbleInteractorStyle);
@@ -47,7 +43,7 @@ vtkScribbleInteractorStyle::vtkScribbleInteractorStyle()
   // Initializations
   this->Tracer = vtkSmartPointer<vtkImageTracerWidget>::New();
   this->Tracer->GetLineProperty()->SetLineWidth(5);
-  this->Tracer->HandleMiddleMouseButtonOff();
+  //this->Tracer->HandleMiddleMouseButtonOff();
 
   // Update the selection when the EndInteraction event is fired.
   this->Tracer->AddObserver(vtkCommand::EndInteractionEvent, this, &vtkScribbleInteractorStyle::CatchWidgetEvent);
