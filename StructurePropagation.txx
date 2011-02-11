@@ -178,10 +178,12 @@ template <typename TImage>
 void StructurePropagation<TImage>::CreateUnaryFactors(GraphicalModel &gm, Space &space)
 {
   std::cout << "Creating unary factors..." << std::endl;
-  //std::cout << "There are " << numberOfNodes << " nodes." << std::endl;
-  //std::cout << "There are " << numberOfLabels << " labels." << std::endl;
+
   unsigned int numberOfNodes = this->TargetPatchRegions.size();
   unsigned int numberOfLabels = this->SourcePatchRegions.size();
+
+  //std::cout << "There are " << numberOfNodes << " nodes." << std::endl;
+  //std::cout << "There are " << numberOfLabels << " labels." << std::endl;
 
   for(unsigned int node = 0; node < numberOfNodes; node++)
     {
@@ -196,23 +198,25 @@ void StructurePropagation<TImage>::CreateUnaryFactors(GraphicalModel &gm, Space 
 
     gm.addFactor(unaryFactor);
     }
+  std::cout << "Finished creating unary factors!" << std::endl;
 }
 
 template <typename TImage>
 void StructurePropagation<TImage>::PropagateStructure()
 {
-  //std::cout << "TImage has " << TImage::PixelType::GetNumberOfComponents() << " components." << std::endl;
-
+  // The order of the following functions is important
   CreateLineImages();
-
+  CreateEdges();
   ComputePatchRegions();
   ExtractRegionsOfPropagationPath();
 
-  CreateEdges();
+  Helpers::WritePixels(this->Image->GetLargestPossibleRegion().GetSize(), this->NodeLocations, "Nodes.png");
 
   // Create the graphical model
   unsigned int numberOfNodes = this->TargetPatchRegions.size();
   unsigned int numberOfLabels = this->SourcePatchRegions.size();
+  std::cout << "PropagateStructure: There are " << numberOfNodes << " nodes." << std::endl;
+  std::cout << "PropagateStructure: There are " << numberOfLabels << " labels." << std::endl;
 
   std::vector<size_t> nodes(numberOfNodes, numberOfLabels);
   Space space(nodes.begin(), nodes.end());
@@ -261,10 +265,14 @@ void StructurePropagation<TImage>::CreateBinaryFactors(GraphicalModel &gm, Space
   std::cout << "Creating binary factors..." << std::endl;
 
   unsigned int numberOfLabels = this->SourcePatchRegions.size();
+  //std::cout << "There are " << numberOfLabels << " labels." << std::endl;
+  //std::cout << "There are " << this->Edges.size() << " edges." << std::endl;
+  //std::cout << "There are " << this->NodeLocations.size() << " nodes." << std::endl;
 
   for(unsigned int edgeId = 0; edgeId < this->Edges.size(); edgeId++)
     {
     std::pair<unsigned int, unsigned int> edge = this->Edges[edgeId];
+    //std::cout << "Creating binary factor between " << edge.first << " and " << edge.second << std::endl;
 
     std::vector<size_t> binaryIndices(2);
     binaryIndices[0] = edge.first;
@@ -280,6 +288,8 @@ void StructurePropagation<TImage>::CreateBinaryFactors(GraphicalModel &gm, Space
       }
     gm.addFactor(binaryFactor);
     }
+
+  std::cout << "Finished creating binary factors!" << std::endl;
 }
 
 template <typename TImage>
@@ -375,23 +385,17 @@ void StructurePropagation<TImage>::ComputeTargetPatchRegions()
   itk::Size<2> patchSize;
   patchSize.Fill(this->PatchRadius*2 + 1);
 
-  std::vector<itk::Index<2> > pixelList = Helpers::BinaryImageToPixelList(this->PropagationLineTargetImage);
-
-  for(unsigned int i = 0; i < pixelList.size(); i++)
+  for(unsigned int i = 0; i < this->NodeLocations.size(); i++)
     {
     // Create a region centered on the pixels
-    itk::Index<2> corner = Helpers::GetCorner(pixelList[i], this->PatchRadius);
+    itk::Index<2> corner = Helpers::GetCorner(this->NodeLocations[i], this->PatchRadius);
     itk::ImageRegion<2> region(corner, patchSize);
 
     // Keep patches which intersect the target region
-
-    // Add the region to the list of target patches
     if(Helpers::IsIntersectTargetRegion(region, this->Mask));
       {
       this->TargetPatchRegions.push_back(region);
-      this->NodeLocations.push_back(pixelList[i]);
       }
-
     }
 }
 
@@ -457,40 +461,47 @@ void StructurePropagation<TImage>::CreateEdges()
 
   // Number the pixels of the target line
   IntScalarImageType::Pointer numberedPixels = IntScalarImageType::New();
-  numberedPixels->SetRegions(this->PropagationLineTargetImage->GetLargestPossibleRegion());
-  numberedPixels->Allocate();
-  numberedPixels->FillBuffer(-1);
-
   Helpers::NumberPixels(this->PropagationLineTargetImage, numberedPixels);
-
-  //Helpers::WriteImage<IntScalarImageType>(numberedPixels, "NumberedPixels.mhd");
   Helpers::WriteColorMappedImage<IntScalarImageType>(numberedPixels, "NumberedPixels.png");
+  Helpers::WriteImage<IntScalarImageType>(numberedPixels, "NumberedPixels.mhd");
+
+  IntScalarImageType::Pointer clusteredPixels1 = IntScalarImageType::New();
+  Helpers::ClusterNumberedPixels(numberedPixels, clusteredPixels1);
+  Helpers::WriteColorMappedImage<IntScalarImageType>(clusteredPixels1, "ClusteredPixels1.png");
+  std::cout << "There are " << Helpers::CountNumberOfNonNegativeValues(clusteredPixels1) << " nodes after first clustering." << std::endl;
+  // cluster again
+  IntScalarImageType::Pointer clusteredPixels = IntScalarImageType::New();
+  Helpers::ClusterNumberedPixels(clusteredPixels1, clusteredPixels);
+  Helpers::WriteColorMappedImage<IntScalarImageType>(clusteredPixels, "ClusteredPixels.png");
+  std::cout << "There are " << Helpers::CountNumberOfNonNegativeValues(clusteredPixels) << " nodes after final clustering." << std::endl;
+
+  //Helpers::WriteImage<IntScalarImageType>(clusteredPixels, "ClusteredPixels.mhd");
+
+  //// for testing only ////
+  /*
+  for(unsigned int i = 0; i < Helpers::CountNumberOfNonNegativeValues(clusteredPixels); i++)
+    {
+    unsigned int number = Helpers::CountPixelsWithValue<IntScalarImageType>(clusteredPixels, i);
+    std::cout << "CreateEdges Test: Label " << i << " has " << number << " pixels." << std::endl;
+    }
+  */
+  /////
+
+  this->NodeLocations = Helpers::GetLabelCenters(clusteredPixels);
+
+  //std::cout << "CreateEdges: There are " << this->NodeLocations.size() << " nodes." << std::endl;
 
   // Create an iterator
   itk::Size<2> radius;
   radius.Fill(1);
 
   typedef itk::ConstNeighborhoodIterator<IntScalarImageType> NeighborhoodIteratorType;
-  NeighborhoodIteratorType iterator(radius, numberedPixels,
-                                    numberedPixels->GetLargestPossibleRegion());
+  NeighborhoodIteratorType iterator(radius, clusteredPixels,
+                                    clusteredPixels->GetLargestPossibleRegion());
 
-  std::vector<NeighborhoodIteratorType::OffsetType> neighbors;
-
-  for(int i = -1 * static_cast<int>(radius[0]); i <= static_cast<int>(radius[0]); i++)
-    {
-    for(int j = -1 * static_cast<int>(radius[1]); j <= static_cast<int>(radius[1]); j++)
-      {
-      if(!(i==0 && j==0))
-        {
-        NeighborhoodIteratorType::OffsetType offset = {{i,j}};
-        neighbors.push_back(offset);
-        } // end if
-      } // end j loop
-    } // end i loop
-
+  //std::vector<NeighborhoodIteratorType::OffsetType> neighbors;
+  std::vector<NeighborhoodIteratorType::OffsetType> neighbors = Helpers::CreateOffsetsInRadius(radius);
   //std::cout << "There are " << neighbors.size() << " neighbors." << std::endl;
-
-
 
   while(!iterator.IsAtEnd())
     {
@@ -500,7 +511,8 @@ void StructurePropagation<TImage>::CreateEdges()
       ++iterator;
       continue;
       }
-
+    // Use the clustered pixels to determine the connectivity of the groups.
+    // The edge's first and second labels will actually be used to map node cluster centers together (with the same connectivity as the original clusters)
     for(unsigned int i = 0; i < neighbors.size(); i++)
       {
       bool inBounds;
@@ -514,8 +526,9 @@ void StructurePropagation<TImage>::CreateEdges()
           edge.second = iterator.GetPixel(neighbors[i]);
           //std::cout << "Potential edge: " << edge.first << " " << edge.second << std::endl;
 
-          if(edge.second > edge.first) // we only want one edge between a pair of nodes, because we will use this to build a factor graph
+          if(edge.second > edge.first) // we only want one edge between a pair of nodes because we will use this to build a factor graph
             {
+            //std::cout << "Creating edge between nodes " << edge.first << " and " << edge.second << std::endl;
             this->Edges.push_back(edge);
             }
           } // end if pixel is positive
@@ -526,7 +539,7 @@ void StructurePropagation<TImage>::CreateEdges()
     ++iterator;
     } // end while
 
-  std::cout << "Created " << this->Edges.size() << " edges." << std::endl;
+  //std::cout << "Created " << this->Edges.size() << " edges." << std::endl;
 
   // For testing only
   WriteEdges();

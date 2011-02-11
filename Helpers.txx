@@ -3,9 +3,72 @@
 #include "itkImageFileWriter.h"
 #include "itkRescaleIntensityImageFilter.h"
 #include "itkScalarToRGBColormapImageFilter.h"
+#include <boost/graph/graph_concepts.hpp>
 
 namespace Helpers
 {
+
+template <typename TImage>
+typename TImage::PixelType GetMaxValue(typename TImage::Pointer image)
+{
+  typedef itk::MinimumMaximumImageCalculator<TImage>
+          ImageCalculatorFilterType;
+
+  typename ImageCalculatorFilterType::Pointer imageCalculatorFilter = ImageCalculatorFilterType::New ();
+  imageCalculatorFilter->SetImage(image);
+  imageCalculatorFilter->Compute();
+  return imageCalculatorFilter->GetMaximum();
+}
+
+template <typename TImage>
+unsigned int CountPixelsWithValue(typename TImage::Pointer image, typename TImage::PixelType pixel)
+{
+  itk::ImageRegionConstIterator<TImage> imageIterator(image, image->GetLargestPossibleRegion());
+  unsigned int counter = 0;
+  while(!imageIterator.IsAtEnd())
+    {
+    if(imageIterator.Get() == pixel)
+      {
+      counter++;
+      }
+    ++imageIterator;
+    }
+  return counter;
+}
+
+
+template <typename TImage>
+std::vector<itk::Index<2> > FindPixelsWithValue(typename TImage::Pointer image, typename TImage::PixelType pixel)
+{
+  std::vector<itk::Index<2> > pixels;
+  itk::ImageRegionConstIterator<TImage> imageIterator(image, image->GetLargestPossibleRegion());
+
+  while(!imageIterator.IsAtEnd())
+    {
+    if(imageIterator.Get() == pixel)
+      {
+      pixels.push_back(imageIterator.GetIndex());
+      }
+    ++imageIterator;
+    }
+  return pixels;
+}
+
+template <typename TImage>
+void DeepCopy(typename TImage::Pointer input, typename TImage::Pointer output)
+{
+  itk::ImageRegionConstIterator<TImage> inputIterator(input, input->GetLargestPossibleRegion());
+  output->SetRegions(input->GetLargestPossibleRegion());
+  output->Allocate();
+  itk::ImageRegionIterator<TImage> outputIterator(output, output->GetLargestPossibleRegion());
+
+  while(!inputIterator.IsAtEnd())
+    {
+    outputIterator.Set(inputIterator.Get());
+    ++inputIterator;
+    ++outputIterator;
+    }
+}
 
 // Convert an ITK image to a VTK image for display
 template <typename TImageType>
@@ -63,7 +126,8 @@ void WriteColorMappedImage(typename TImage::Pointer image, std::string filename)
   typedef itk::ScalarToRGBColormapImageFilter<UnsignedCharScalarImageType, RGBImageType> RGBFilterType;
   RGBFilterType::Pointer rgbfilter = RGBFilterType::New();
   rgbfilter->SetInput(rescaleFilter->GetOutput());
-  rgbfilter->SetColormap( RGBFilterType::Hot );
+  //rgbfilter->SetColormap( RGBFilterType::Hot );
+  rgbfilter->SetColormap( RGBFilterType::Jet );
   rgbfilter->Update();
 
   typedef  itk::ImageFileWriter<RGBImageType> WriterType;
