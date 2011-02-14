@@ -33,7 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Custom
 #include "StructurePropagation.h"
 #include "vtkScribbleInteractorStyle.h"
-//#include "ProgressThread.h"
+#include "ComputationThread.h"
+#include "InnerWidgetObject.h"
 
 // VTK
 #include <vtkSmartPointer.h>
@@ -48,79 +49,89 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 class vtkImageActor;
 class vtkRenderer;
 
-#include "InnerWidgetObject.h"
-
 template <typename TImage>
 class InnerWidget : public InnerWidgetObject
 {
 public:
   InnerWidget(QWidget *parent = 0);
 
-  // Use a QFileDialog to get a filename, then open the specified file as a greyscale or color image, depending on which type the user has specified through the file menu.
+  // Functions
   void OpenFile();
 
-  // Menu items
-  //void actionFlip_Image_triggered() = 0;
-  //void actionSave_Result_triggered() = 0;
+  void chkFlip_clicked();
 
   // Buttons
   void btnClearStrokes_clicked();
   void btnSaveStrokes_clicked();
   void btnPropagate_clicked();
   void btnLoadMask_clicked();
-
-  // Radio buttons
-  //void radDrawPropagationLine_clicked();
-  //void radDrawHole_clicked();
+  void btnSaveResult_clicked();
+  void btnScreenshot_clicked();
 
   // These slots handle running the progress bar while the computations are done in a separate thread.
-  //void StartProgressSlot();
-  //void StopProgressSlot();
+  void StartProgressSlot();
+  void StopProgressSlot();
+
+  // Check boxes
+  void chkScale_clicked();
+  void chkShowPaths_clicked();
+  void chkShowResult_clicked();
+  void chkShowOriginal_clicked();
+  void chkShowMask_clicked();
+
+  // Other GUI elements
+  void sldPatchRadius_valueChanged();
 
 protected:
 
-  void DisplayImage(typename TImage::Pointer image);
+  // Functions
+  void ConnectSignalsAndSlots();
+  void FlipImage();
+  void SaveResult();
+  void LoadMask(std::string filename);
 
-  void LoadMask(std::string);
+  void DisplayTransparencyMaskedImage(typename TImage::Pointer image);
+  void DisplayScaledImage(typename TImage::Pointer image);
 
+  // Handle things associated with the propagation path
   void StrokeUpdated(vtkPolyData* path, bool closed);
   void UpdateMaskFromStroke(vtkPolyData* path, bool closed);
   void UpdateColorPropagationLineFromStroke(vtkPolyData* polyDataPath);
 
   // A class to do the main computations in a separate thread so we can display a marquee progress bar.
-  //CProgressThread ProgressThread;
+  ComputationThread<TImage> PropagateThread;
 
-  // Our scribble interactor style
+  // Scribble interactor style
   vtkSmartPointer<vtkScribbleInteractorStyle> ScribbleInteractorStyle;
+  vtkSmartPointer<vtkImageActor> ScribbleCanvasActor;
+  vtkSmartPointer<vtkImageData> ScribbleCanvas;
+  void CreateScribbleCanvas();
 
-  // The main class. This will be instantiated as a StructurePropagation after the user selects which type of image to open.
-  StructurePropagation<TImage>* StructurePropagationFilter;
+  StructurePropagation<TImage> StructurePropagationFilter;
 
   // The input image actors
   vtkSmartPointer<vtkImageActor> OriginalImageActor;
   vtkSmartPointer<vtkImageActor> MaskImageActor;
-
-  // The output image actors
   vtkSmartPointer<vtkImageActor> ResultActor;
 
   // The renderers
-  vtkSmartPointer<vtkRenderer> LeftRenderer;
-  vtkSmartPointer<vtkRenderer> RightRenderer;
+  vtkSmartPointer<vtkRenderer> Renderer;
 
   // Refresh both renderers and render windows
   void Refresh();
+  bool NeverRendered;
 
   // Allows the background color to be changed
   double BackgroundColor[3];
 
-  // We set this when the image is opened. We sometimes need to know how big the image is.
-  itk::ImageRegion<2> ImageRegion;
-
   // Data
   UnsignedCharScalarImageType::Pointer Mask;
-  std::vector<itk::Index<2> > ColorPropagationLine;
+  //std::vector<itk::Index<2> > ColorPropagationLine;
+  std::set<itk::Index<2> > ColorPropagationLine;
+  std::set<itk::Index<2> > PropagationLineIntersections;
+  itk::ImageRegion<2> ImageRegion; // This is set when the image is opened. We sometimes need to know how big the image is.
 
-  // Data, mapper, and actor for the selections
+  // Objects for the propagation path.
   vtkSmartPointer<vtkPolyData> ColorPropagationPathPolyData;
   vtkSmartPointer<vtkPolyDataMapper> ColorPropagationPathMapper;
   vtkSmartPointer<vtkActor> ColorPropagationPathActor;

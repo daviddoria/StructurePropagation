@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <vtkImageStencilToImage.h>
 #include <vtkInteractorStyleImage.h>
 #include <vtkLookupTable.h>
+#include <vtkPNGWriter.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper.h>
 #include <vtkPolyDataToImageStencil.h>
@@ -42,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <vtkRendererCollection.h>
 #include <vtkRenderWindow.h>
 #include <vtkSmartPointer.h>
+#include <vtkWindowToImageFilter.h>
 
 // Qt
 #include <QFileDialog>
@@ -54,6 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 template<typename TImage>
 InnerWidget<TImage>::InnerWidget(QWidget *parent)
 {
+  this->NeverRendered = true;
 
   // Set the progress bar to marquee mode
   this->progressBar->setMinimum(0);
@@ -63,7 +66,6 @@ InnerWidget<TImage>::InnerWidget(QWidget *parent)
   this->BackgroundColor[0] = 0;
   this->BackgroundColor[1] = 0;
   this->BackgroundColor[2] = .5;
-
 
   double initialCameraUp[3];
   initialCameraUp[0] = 0;
@@ -75,31 +77,21 @@ InnerWidget<TImage>::InnerWidget(QWidget *parent)
   this->MaskImageActor = vtkSmartPointer<vtkImageActor>::New();
   this->ResultActor = vtkSmartPointer<vtkImageActor>::New();
 
+  this->ScribbleCanvasActor = vtkSmartPointer<vtkImageActor>::New();
+  this->ScribbleCanvas = vtkSmartPointer<vtkImageData>::New();
+
   // Add renderers - we flip the image by changing the camera view up because of the conflicting conventions used by ITK and VTK
-  this->LeftRenderer = vtkSmartPointer<vtkRenderer>::New();
-  this->LeftRenderer->GradientBackgroundOn();
-  this->LeftRenderer->SetBackground(this->BackgroundColor);
-  this->LeftRenderer->SetBackground2(1,1,1);
-  this->LeftRenderer->GetActiveCamera()->SetViewUp(initialCameraUp);
-  this->qvtkWidgetLeft->GetRenderWindow()->AddRenderer(this->LeftRenderer);
+  this->Renderer = vtkSmartPointer<vtkRenderer>::New();
+  this->Renderer->GradientBackgroundOn();
+  this->Renderer->SetBackground(this->BackgroundColor);
+  this->Renderer->SetBackground2(1,1,1);
+  this->Renderer->GetActiveCamera()->SetViewUp(initialCameraUp);
+  this->qvtkWidget->GetRenderWindow()->AddRenderer(this->Renderer);
 
-  this->RightRenderer = vtkSmartPointer<vtkRenderer>::New();
-  this->RightRenderer->GradientBackgroundOn();
-  this->RightRenderer->SetBackground(this->BackgroundColor);
-  this->RightRenderer->SetBackground2(1,1,1);
-  this->RightRenderer->GetActiveCamera()->SetViewUp(initialCameraUp);
-  this->qvtkWidgetRight->GetRenderWindow()->AddRenderer(this->RightRenderer);
-
-  // Setup right interactor style
-  vtkSmartPointer<vtkInteractorStyleImage> interactorStyleImage =
-    vtkSmartPointer<vtkInteractorStyleImage>::New();
-  this->qvtkWidgetRight->GetInteractor()->SetInteractorStyle(interactorStyleImage);
-
-  // Setup left interactor style
+  // Setup interactor style
   this->ScribbleInteractorStyle = vtkSmartPointer<vtkScribbleInteractorStyle>::New();
-  this->qvtkWidgetLeft->GetInteractor()->SetInteractorStyle(this->ScribbleInteractorStyle);
+  this->qvtkWidget->GetInteractor()->SetInteractorStyle(this->ScribbleInteractorStyle);
 
-  this->StructurePropagationFilter = NULL;
   this->Mask = UnsignedCharScalarImageType::New();
 
   this->ColorPropagationPathPolyData = vtkSmartPointer<vtkPolyData>::New();
@@ -109,26 +101,191 @@ InnerWidget<TImage>::InnerWidget(QWidget *parent)
   this->ColorPropagationPathActor->SetMapper(this->ColorPropagationPathMapper);
   this->ColorPropagationPathActor->GetProperty()->SetLineWidth(4);
   this->ColorPropagationPathActor->GetProperty()->SetColor(0,1,0);
-  this->LeftRenderer->AddActor(this->ColorPropagationPathActor);
+  //this->Renderer->AddActor(this->ColorPropagationPathActor);
 
+  ConnectSignalsAndSlots();
+}
+
+template <typename TImage>
+void InnerWidget<TImage>::ConnectSignalsAndSlots()
+{
   this->ScribbleInteractorStyle->StrokeUpdated.connect(boost::bind(&InnerWidget::StrokeUpdated, this, _1, _2));
+  connect(&PropagateThread, SIGNAL(StartProgressSignal()), this, SLOT(StartProgressSlot()), Qt::QueuedConnection);
+  connect(&PropagateThread, SIGNAL(StopProgressSignal()), this, SLOT(StopProgressSlot()), Qt::QueuedConnection);
+  connect(this->sldPatchRadius, SIGNAL(valueChanged(int)), this, SLOT(sldPatchRadius_valueChanged()));
+  connect(this->chkScale, SIGNAL(clicked()), this, SLOT(chkScale_clicked()));
+  connect(this->chkFlip, SIGNAL(clicked()), this, SLOT(chkFlip_clicked()));
+  connect(this->chkShowPaths, SIGNAL(clicked()), this, SLOT(chkShowPaths_clicked()));
+  connect(this->chkShowResult, SIGNAL(clicked()), this, SLOT(chkShowResult_clicked()));
+  connect(this->chkShowOriginal, SIGNAL(clicked()), this, SLOT(chkShowOriginal_clicked()));
+  connect(this->chkShowMask, SIGNAL(clicked()), this, SLOT(chkShowMask_clicked()));
+  connect(this->btnSaveResult, SIGNAL(clicked()), this, SLOT(btnSaveResult_clicked()));
+  connect(this->btnScreenshot, SIGNAL(clicked()), this, SLOT(btnScreenshot_clicked()));
+
+  connect( this->btnPropagate, SIGNAL( clicked() ), this, SLOT(btnPropagate_clicked()));
+  connect( this->btnLoadMask, SIGNAL( clicked() ), this, SLOT(btnLoadMask_clicked()));
+  connect( this->btnClearStrokes, SIGNAL( clicked() ), this, SLOT(btnClearStrokes_clicked()));
+  connect( this->btnSaveStrokes, SIGNAL( clicked() ), this, SLOT(btnSaveStrokes_clicked()));
+}
+
+template <typename TImage>
+void InnerWidget<TImage>::btnScreenshot_clicked()
+{
+  vtkSmartPointer<vtkWindowToImageFilter> windowToImageFilter =
+    vtkSmartPointer<vtkWindowToImageFilter>::New();
+  //windowToImageFilter->SetInput(renderWindow);
+  windowToImageFilter->SetInput(this->qvtkWidget->GetInteractor()->GetRenderWindow());
+  //windowToImageFilter->SetMagnification(3); //set the resolution of the output image (3 times the current resolution of vtk render window)
+  //windowToImageFilter->SetInputBufferTypeToRGBA(); //also record the alpha (transparency) channel
+  windowToImageFilter->Update();
+
+  vtkSmartPointer<vtkPNGWriter> writer =
+    vtkSmartPointer<vtkPNGWriter>::New();
+  writer->SetFileName("screenshot.png");
+  writer->SetInput(windowToImageFilter->GetOutput());
+  writer->Write();
+}
+
+template <typename TImage>
+void InnerWidget<TImage>::chkShowPaths_clicked()
+{
+  //this->ColorPropagationPathActor->SetVisibility(this->chkShowPaths->isChecked());
+  this->Refresh();
+  std::cout << "Set path visibility to " << this->chkShowPaths->isChecked() << std::endl;
+}
+
+template <typename TImage>
+void InnerWidget<TImage>::chkShowResult_clicked()
+{
+  //this->ResultActor->SetVisibility(this->chkShowResult->isChecked());
+  this->Refresh();
+  std::cout << "Set result visibility to " << this->chkShowResult->isChecked() << std::endl;
+}
+
+template <typename TImage>
+void InnerWidget<TImage>::chkShowOriginal_clicked()
+{
+  //this->OriginalImageActor->SetVisibility(this->chkShowOriginal->isChecked());
+  this->Refresh();
+  std::cout << "Set original image visibility to " << this->chkShowOriginal->isChecked() << std::endl;
+}
+
+template <typename TImage>
+void InnerWidget<TImage>::chkShowMask_clicked()
+{
+  //this->MaskImageActor->SetVisibility(this->chkShowMask->isChecked());
+  this->Refresh();
+  std::cout << "Set mask visibility to " << this->chkShowMask->isChecked() << std::endl;
+}
+
+template <typename TImage>
+void InnerWidget<TImage>::sldPatchRadius_valueChanged()
+{
+  this->StructurePropagationFilter.SetPatchRadius(this->sldPatchRadius->value());
+}
+
+template <typename TImage>
+void InnerWidget<TImage>::chkScale_clicked()
+{
+  /*
+  if(this->chkScale->isChecked())
+    {
+    DisplayScaledImage(this->Image);
+    }
+  else
+    {
+    DisplayImage(this->Image);
+    }
+  */
+}
+
+template <typename TImage>
+void InnerWidget<TImage>::StartProgressSlot()
+{
+  // Connected to the StartProgressSignal of the ProgressThread member
+  std::cout << "StartProgressSlot: Called!" << std::endl;
+  this->progressBar->show();
+  QCursor waitCursor;
+  waitCursor.setShape(Qt::WaitCursor);
+  this->setCursor(waitCursor);
+}
+
+template <typename TImage>
+void InnerWidget<TImage>::StopProgressSlot()
+{
+  // Display result
+
+  //std::cout << "StopProgressSlot: Done!" << std::endl;
+  this->progressBar->hide();
+  QCursor arrowCursor;
+  arrowCursor.setShape(Qt::ArrowCursor);
+  this->setCursor(arrowCursor);
+
+  //DisplayImage(this->StructurePropagationFilter.GetOutputImage());
+  DisplayTransparencyMaskedImage(this->StructurePropagationFilter.GetOutputImage());
+
+  this->SaveResult();
+}
+
+template<typename TImage>
+void InnerWidget<TImage>::SaveResult()
+{
+  QFileInfo myFile(this->txtResult->text().toStdString().c_str());
+  if(myFile.suffix().toStdString().compare(".png"))
+    {
+    Helpers::CastAndWriteImage<TImage>(this->StructurePropagationFilter.GetOutputImage(), this->txtResult->text().toStdString());
+    }
+  else
+    {
+    Helpers::WriteImage<TImage>(this->StructurePropagationFilter.GetOutputImage(), this->txtResult->text().toStdString());
+    }
+}
+
+template<typename TImage>
+void InnerWidget<TImage>::DisplayScaledImage(typename TImage::Pointer image)
+{
+  // Maybe this could be replaced with a "Magnitude of vector image" filter" (so it makes more sense with TImage more than 1 component) - an implicit "vector -> grayscale" computation - AbsImageFilter perhaps?
+  typedef itk::NthElementImageAdaptor<TImage, float> ImageAdaptorType;
+  typename ImageAdaptorType::Pointer adaptor = ImageAdaptorType::New();
+  adaptor->SelectNthElement(0);
+  adaptor->SetImage(image);
+
+  typedef itk::RescaleIntensityImageFilter< ImageAdaptorType, UnsignedCharScalarImageType > RescaleFilterType;
+  typename RescaleFilterType::Pointer rescaleFilter = RescaleFilterType::New();
+  rescaleFilter->SetInput(adaptor);
+  rescaleFilter->SetOutputMinimum(0);
+  rescaleFilter->SetOutputMaximum(255);
+  rescaleFilter->Update();
+
+  // Convert the ITK image to a VTK image and display it
+  vtkSmartPointer<vtkImageData> VTKImage =
+    vtkSmartPointer<vtkImageData>::New();
+  Helpers::ITKImageToVTKImage<UnsignedCharScalarImageType>(rescaleFilter->GetOutput(), VTKImage);
+
+  this->OriginalImageActor->SetInput(VTKImage);
+
 }
 
 
 template<typename TImage>
-void InnerWidget<TImage>::DisplayImage(typename TImage::Pointer image)
+void InnerWidget<TImage>::DisplayTransparencyMaskedImage(typename TImage::Pointer image)
 {
   // Convert the ITK image to a VTK image and display it
   vtkSmartPointer<vtkImageData> VTKImage =
     vtkSmartPointer<vtkImageData>::New();
   Helpers::ITKImageToVTKImage<TImage>(image, VTKImage);
 
-  this->LeftRenderer->RemoveAllViewProps();
+  /*
+  vtkSmartPointer<vtkImageData> transparencyMaskedImage =
+    vtkSmartPointer<vtkImageData>::New();
+  Helpers::ApplyTransparencyMask(VTKImage, this->Mask, transparencyMaskedImage);
 
-  this->OriginalImageActor->SetInput(VTKImage);
-  this->ScribbleInteractorStyle->InitializeTracer(this->OriginalImageActor);
+  this->ResultActor->SetInput(transparencyMaskedImage);
+  */
 
-  this->LeftRenderer->ResetCamera();
+  this->ResultActor->SetInput(VTKImage);
+
+  this->Renderer->AddActor(this->ResultActor);
   this->Refresh();
 }
 
@@ -162,26 +319,17 @@ void InnerWidget<TImage>::LoadMask(std::string filename)
   mapTransparency->SetInput(VTKMaskImage);
   mapTransparency->PassAlphaToOutputOn();
 
-  //this->MaskImageActor->SetInput(VTKMaskImage);
   this->MaskImageActor->SetInput(mapTransparency->GetOutput());
 
-  this->qvtkWidgetLeft->GetInteractor()->GetRenderWindow()->GetRenderers()->GetFirstRenderer()->AddActor(this->MaskImageActor);
+  //this->qvtkWidget->GetInteractor()->GetRenderWindow()->GetRenderers()->GetFirstRenderer()->AddActor(this->MaskImageActor);
 
-  this->ScribbleInteractorStyle->InitializeTracer(this->MaskImageActor);
 }
 
 template<typename TImage>
 void InnerWidget<TImage>::btnLoadMask_clicked()
 {
-  if(!this->StructurePropagationFilter)
-    {
-    std::cerr << "Cannot load a mask until an image is loaded!" << std::endl;
-    return;
-    }
-
   // Get a filename to open
-  QString filename = QFileDialog::getOpenFileName(this,
-      tr("Open Mask"), ".", tr("Image Files (*.png *.bmp)"));
+  QString filename = QFileDialog::getOpenFileName(this, "Open Mask", ".", "Image Files (*.png *.bmp)");
 
   if(filename.isEmpty())
     {
@@ -190,68 +338,16 @@ void InnerWidget<TImage>::btnLoadMask_clicked()
     }
 
   LoadMask(filename.toStdString());
-
 }
-
-#if 0
-template<typename TImage>
-void InnerWidget<TImage>::StartProgressSlot()
-{
-  // Connected to the StartProgressSignal of the ProgressThread member
-  this->progressBar->show();
-}
-#endif
-
-#if 0
-template<typename TImage>
-void InnerWidget<TImage>::StopProgressSlot()
-{
-  // Display result image with transparent background pixels
-
-  // When the ProgressThread emits the StopProgressSignal, we need to display the result of the segmentation
-#if 0
-  // Convert the segmentation mask to a binary VTK image
-  vtkSmartPointer<vtkImageData> VTKSegmentMask =
-    vtkSmartPointer<vtkImageData>::New();
-  ITKImagetoVTKImage<MaskImageType>(static_cast<ImageGraphCut<GrayscaleImageType>* >(this->GraphCut)->GetSegmentMask(), VTKSegmentMask);
-
-  // Convert the image into a VTK image for display
-  vtkSmartPointer<vtkImageData> VTKImage =
-    vtkSmartPointer<vtkImageData>::New();
-  if(this->GraphCut->GetPixelDimensionality() == 1)
-    {
-    ITKImagetoVTKImage<GrayscaleImageType>(static_cast<ImageGraphCut<GrayscaleImageType>* >(this->GraphCut)->GetMaskedOutput(), VTKImage);
-    }
-  else if(this->GraphCut->GetPixelDimensionality() == 3)
-    {
-    ITKImagetoVTKImage<ColorImageType>(static_cast<ImageGraphCut<ColorImageType>* >(this->GraphCut)->GetMaskedOutput(), VTKImage);
-    }
-  else
-    {
-    std::cerr << "This type of image (" << this->GraphCut->GetPixelDimensionality() << ") cannot be displayed!" << std::endl;
-    exit(-1);
-    }
-
-  vtkSmartPointer<vtkImageData> VTKMaskedImage =
-    vtkSmartPointer<vtkImageData>::New();
-  MaskImage(VTKImage, VTKSegmentMask, VTKMaskedImage);
-
-  // Remove the old output, set the new output and refresh everything
-  this->ResultActor->SetInput(VTKMaskedImage);
-  this->RightRenderer->RemoveAllViewProps();
-  this->RightRenderer->AddActor(ResultActor);
-  this->RightRenderer->ResetCamera();
-  this->Refresh();
-
-  this->progressBar->hide();
-#endif
-}
-#endif
 
 template<typename TImage>
 void InnerWidget<TImage>::btnClearStrokes_clicked()
 {
   this->ColorPropagationLine.clear();
+  this->ColorPropagationPathPolyData->Reset();
+  this->ColorPropagationPathPolyData->Squeeze();
+  this->ColorPropagationPathMapper->Update();
+  this->Refresh();
 }
 
 template<typename TImage>
@@ -266,107 +362,65 @@ void InnerWidget<TImage>::btnSaveStrokes_clicked()
 
   // Get image of stroke from scribble interactor style
   UnsignedCharScalarImageType::Pointer colorStrokeImage = UnsignedCharScalarImageType::New();
-  Helpers::IndicesToBinaryImage(this->ColorPropagationLine, colorStrokeImage);
+  Helpers::IndicesToBinaryImage(this->ColorPropagationLine, this->Mask->GetLargestPossibleRegion(), colorStrokeImage);
 
-  typedef  itk::ImageFileWriter< UnsignedCharScalarImageType  > WriterType;
-  WriterType::Pointer writer = WriterType::New();
-  writer->SetFileName(colorStrokesFilename);
-  writer->SetInput(colorStrokeImage);
-  writer->Update();
+  Helpers::WriteImage<UnsignedCharScalarImageType>(colorStrokeImage, colorStrokesFilename);
 
+}
+
+template<typename TImage>
+void InnerWidget<TImage>::chkFlip_clicked()
+{
+  this->FlipImage();
 }
 
 template<typename TImage>
 void InnerWidget<TImage>::btnPropagate_clicked()
 {
-  std::cout << "Number of points: " << this->ColorPropagationLine.size() << std::endl;
+  std::cout << "btnPropagate_clicked: Number of points: " << this->ColorPropagationLine.size() << std::endl;
+
+  this->StructurePropagationFilter.ClearEverything();
 
   // Give the data to the structure propagation algorithm
-  this->StructurePropagationFilter->SetMask(this->Mask);
-  this->StructurePropagationFilter->SetPatchRadius(3);
-  this->StructurePropagationFilter->SetPropagationLine(this->ColorPropagationLine);
+  this->StructurePropagationFilter.SetMask(this->Mask);
+  //this->StructurePropagationFilter->SetPatchRadius(3);
+  this->StructurePropagationFilter.SetPropagationLine(this->ColorPropagationLine);
 
-  this->StructurePropagationFilter->PropagateStructure();
-
-  DisplayImage(this->StructurePropagationFilter->GetOutputImage());
-
-
+  this->PropagateThread.Propagation = &(this->StructurePropagationFilter);
+  this->PropagateThread.start();
 }
 
-#if 0
+
 template<typename TImage>
-void InnerWidget<TImage>::actionFlip_Image_triggered()
+void InnerWidget<TImage>::FlipImage()
 {
   double up[3];
-  this->LeftRenderer->GetActiveCamera()->GetViewUp(up);
+  this->Renderer->GetActiveCamera()->GetViewUp(up);
   up[1] *= -1;
-  this->LeftRenderer->GetActiveCamera()->SetViewUp(up);
-  this->RightRenderer->GetActiveCamera()->SetViewUp(up);
+  this->Renderer->GetActiveCamera()->SetViewUp(up);
 
   double pos[3];
-  this->LeftRenderer->GetActiveCamera()->GetPosition(pos);
+  this->Renderer->GetActiveCamera()->GetPosition(pos);
   pos[2] *= -1;
-  this->LeftRenderer->GetActiveCamera()->SetPosition(pos);
-  this->RightRenderer->GetActiveCamera()->SetPosition(pos);
+  this->Renderer->GetActiveCamera()->SetPosition(pos);
 
   this->Refresh();
 
-  /*
-  this->CameraUp[1] *= -1;
-  std::cout << this->CameraUp[0] << " " << this->CameraUp[1] << " " << this->CameraUp[2] << std::endl;
-
-  double pos[3];
-  this->LeftRenderer->GetActiveCamera()->GetPosition(pos);
-  std::cout << "position: " << pos[0] << " " << pos[1] << " " << pos[2] << std::endl;
-  pos[2] *= -1;
-  this->LeftRenderer->GetActiveCamera()->SetPosition(pos);
-  this->RightRenderer->GetActiveCamera()->SetPosition(pos);
-
-  this->LeftRenderer->GetActiveCamera()->SetViewUp(this->CameraUp);
-  this->RightRenderer->GetActiveCamera()->SetViewUp(this->CameraUp);
-  this->Refresh();
-  */
 }
-#endif
 
-#if 0
+
 template<typename TImage>
-void InnerWidget<TImage>::actionSave_Result_triggered()
+void InnerWidget<TImage>::btnSaveResult_clicked()
 {
-  // Ask the user for a filename to save the segment mask image to
-
-  QString fileName = QFileDialog::getSaveFileName(this,
-    tr("Save Segment Mask Image"), "/home/doriad", tr("Image Files (*.png *.bmp)"));
-/*
-  // Convert the image from a 1D vector image to an unsigned char image
-  typedef itk::CastImageFilter< GrayscaleImageType, itk::Image<itk::CovariantVector<unsigned char, 1>, 2 > > CastFilterType;
-  CastFilterType::Pointer castFilter = CastFilterType::New();
-  castFilter->SetInput(this->GraphCut->GetSegmentMask());
-
-  typedef itk::NthElementImageAdaptor< itk::Image<itk:: CovariantVector<unsigned char, 1>, 2 >,
-    unsigned char> ImageAdaptorType;
-
-  ImageAdaptorType::Pointer adaptor = ImageAdaptorType::New();
-  adaptor->SelectNthElement(0);
-  adaptor->SetImage(castFilter->GetOutput());
-*/
-
-/*
-  // Write the file
-  //typedef  itk::ImageFileWriter< ImageAdaptorType > WriterType;
-  typedef  itk::ImageFileWriter< MaskImageType > WriterType;
-  WriterType::Pointer writer = WriterType::New();
-  writer->SetFileName(fileName.toStdString());
-  //writer->SetInput(adaptor);
-  writer->SetInput(this->GraphCut->GetSegmentMask());
-  writer->Update();
-*/
+  this->SaveResult();
 }
-#endif
+
 
 template <typename TImage>
 void InnerWidget<TImage>::OpenFile()
 {
+  // Use a QFileDialog to get a filename, then open the specified file as a greyscale or color image, depending on which type the user has specified through the file menu.
+
   // Get a filename to open
   QString filename = QFileDialog::getOpenFileName(this,
      //tr("Open Image"), "/media/portable/Projects/src/InteractiveImageGraphCutSegmentation/data", tr("Image Files (*.png *.bmp *.mhd)"));
@@ -377,9 +431,6 @@ void InnerWidget<TImage>::OpenFile()
     return;
     }
 
-  // Clear the scribbles
-  //this->ScribbleInteractorStyle->ClearStrokes();
-
   // Read file
   typename itk::ImageFileReader<TImage>::Pointer reader = itk::ImageFileReader<TImage>::New();
 
@@ -388,71 +439,127 @@ void InnerWidget<TImage>::OpenFile()
 
   this->ImageRegion = reader->GetOutput()->GetLargestPossibleRegion();
 
-  /*
-  // Delete the old object if one exists
-  if(this->GraphCut)
+  if(this->chkScale->isChecked())
     {
-    delete this->GraphCut;
+    //DisplayScaledImage(reader->GetOutput());
+    }
+  else
+    {
+    vtkSmartPointer<vtkImageData> VTKImage =
+      vtkSmartPointer<vtkImageData>::New();
+    Helpers::ITKImageToVTKImage<TImage>(reader->GetOutput(), VTKImage);
+    this->OriginalImageActor->SetInput(VTKImage);
     }
 
-  // Instantiate the ImageGraphCut object with the correct type
-  this->GraphCut = new ImageGraphCut<TImage>(reader->GetOutput());
-  */
-
-//  DisplayImage<TImage>(reader->GetOutput());
-  DisplayImage(reader->GetOutput());
-
-  this->StructurePropagationFilter = new StructurePropagation<TImage>();
-  this->StructurePropagationFilter->SetImage(reader->GetOutput());
+  this->StructurePropagationFilter.SetImage(reader->GetOutput());
 
   // Create mask filename from image filename
   QFileInfo maskFileInfo(filename);
   std::stringstream ssMaskFile;
-  ssMaskFile << maskFileInfo.baseName().toStdString() << "Mask.png";
+  ssMaskFile << maskFileInfo.absolutePath().toStdString() << "/" << maskFileInfo.baseName().toStdString() << "Mask.png";
   std::cout << "Constructed default mask filename as " << ssMaskFile.str() << std::endl;
 
   // If the mask file exists, load it.
   QFile myFile(ssMaskFile.str().c_str());
   if(myFile.exists())
     {
+    std::cout << "Loading mask " << ssMaskFile.str() << std::endl;
     LoadMask(ssMaskFile.str());
     }
+  else
+    {
+    std::cout << "Mask " << ssMaskFile.str() << " not found!" << std::endl;
+    }
 
-  // optionally flip the image (if you are frequently using images which must be flipped
-//  actionFlip_Image_triggered();
+  CreateScribbleCanvas();
+
+  this->NeverRendered = true;
+
+  this->Refresh();
+
+  // Optionally flip the image (if you are frequently using images which must be flipped
+  // FlipImage();
 
 }
 
 template<typename TImage>
 void InnerWidget<TImage>::Refresh()
 {
-  this->LeftRenderer->Render();
-  this->RightRenderer->Render();
-  this->qvtkWidgetRight->GetRenderWindow()->Render();
-  this->qvtkWidgetLeft->GetRenderWindow()->Render();
-  this->qvtkWidgetRight->GetInteractor()->Render();
-  this->qvtkWidgetLeft->GetInteractor()->Render();
+  //std::cout << "Refresh()" << std::endl;
+
+  // Remove all actors
+  this->Renderer->RemoveActor(ColorPropagationPathActor);
+  this->Renderer->RemoveActor(MaskImageActor);
+  this->Renderer->RemoveActor(OriginalImageActor);
+  this->Renderer->RemoveActor(ResultActor);
+  this->Renderer->RemoveActor(ScribbleCanvasActor);
+
+  // Add all actors back if they are enabled (order is important here)
+  if(this->chkShowOriginal->isChecked())
+    {
+    this->Renderer->AddActor(OriginalImageActor);
+    }
+  if(this->chkShowMask->isChecked())
+    {
+    this->Renderer->AddActor(MaskImageActor);
+    }
+  if(this->chkShowResult->isChecked())
+    {
+    this->Renderer->AddActor(ResultActor);
+    }
+  if(this->chkShowPaths->isChecked())
+    {
+    this->Renderer->AddActor(ColorPropagationPathActor);
+    }
+
+  this->Renderer->AddActor(ScribbleCanvasActor);
+
+  if(this->NeverRendered)
+    {
+    this->Renderer->ResetCamera();
+    this->NeverRendered = false;
+    }
+
+  this->Renderer->Render();
+  this->qvtkWidget->GetRenderWindow()->Render();
+  this->qvtkWidget->GetInteractor()->Render();
+
+  this->ScribbleInteractorStyle->InitializeTracer(this->ScribbleCanvasActor);
+}
+
+template<typename TImage>
+void InnerWidget<TImage>::CreateScribbleCanvas()
+{
+  this->ScribbleCanvas->SetNumberOfScalarComponents(4);
+  this->ScribbleCanvas->SetScalarTypeToUnsignedChar();
+  int dims[3];
+  this->OriginalImageActor->GetInput()->GetDimensions(dims);
+  this->ScribbleCanvas->SetDimensions(dims);
+  this->ScribbleCanvas->AllocateScalars();
+
+  for (int y = 0; y < dims[1]; y++)
+    {
+    for (int x = 0; x < dims[0]; x++)
+      {
+      unsigned char* pixel = static_cast<unsigned char*>(this->ScribbleCanvas->GetScalarPointer(x,y,0));
+      pixel[3] = 0; // transparent
+      }
+    }
+
+  this->ScribbleCanvasActor->SetInput(this->ScribbleCanvas);
+
+  //this->ScribbleInteractorStyle->InitializeTracer(this->ScribbleCanvasActor);
 }
 
 template<typename TImage>
 void InnerWidget<TImage>::StrokeUpdated(vtkPolyData* path, bool closed)
 {
-  //std::cout << "Form::StrokeUpdated" << std::endl;
-  if(this->radDrawHole->isChecked())
-    {
-    UpdateMaskFromStroke(path, closed);
-    }
-  else if(this->radDrawPropagationLine->isChecked())
-    {
-    UpdateColorPropagationLineFromStroke(path);
-    }
+  UpdateColorPropagationLineFromStroke(path);
 }
 
 template<typename TImage>
 void InnerWidget<TImage>::UpdateColorPropagationLineFromStroke(vtkPolyData* polyDataPath)
 {
-  //this->ColorPropagationPathPolyData->ShallowCopy(polyDataPath); //keep only 1 stroke
-
   vtkSmartPointer<vtkAppendPolyData> appendFilter =
     vtkSmartPointer<vtkAppendPolyData>::New();
   appendFilter->AddInputConnection(this->ColorPropagationPathPolyData->GetProducerPort());
@@ -460,20 +567,12 @@ void InnerWidget<TImage>::UpdateColorPropagationLineFromStroke(vtkPolyData* poly
   appendFilter->Update();
   this->ColorPropagationPathPolyData->ShallowCopy(appendFilter->GetOutput());
 
-  //std::cout << this->ColorPropagationPathPolyData->GetNumberOfPoints() << " points." << std::endl;
-
   std::vector<itk::Index<2> > path = Helpers::PolyDataToPixelList(polyDataPath);
 
-  //this->ColorPropagationLine = path; // keep only one stroke
-
   this->ColorPropagationLine.insert(this->ColorPropagationLine.end(), path.begin(), path.end()); // keep all of the strokes combined
-  std::cout << "There are " << this->ColorPropagationLine.size() << " pixels in the strokes." << std::endl;
-  // In the future, we'd want use a std::vector<std::vector<itk::Index<2> > > paths
-  // and do this->Paths.push_back(path); so that we have access to each stroke separately
+  std::cout << "UpdateColorPropagationLineFromStroke: There are " << this->ColorPropagationLine.size() << " pixels in the strokes." << std::endl;
 
-
-  this->LeftRenderer->AddActor(this->ColorPropagationPathActor);
-  this->Refresh();
+  //this->Refresh();
 }
 
 template<typename TImage>

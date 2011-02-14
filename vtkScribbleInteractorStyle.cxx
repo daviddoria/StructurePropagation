@@ -43,7 +43,6 @@ vtkScribbleInteractorStyle::vtkScribbleInteractorStyle()
   // Initializations
   this->Tracer = vtkSmartPointer<vtkImageTracerWidget>::New();
   this->Tracer->GetLineProperty()->SetLineWidth(5);
-  //this->Tracer->HandleMiddleMouseButtonOff();
 
   // Update the selection when the EndInteraction event is fired.
   this->Tracer->AddObserver(vtkCommand::EndInteractionEvent, this, &vtkScribbleInteractorStyle::CatchWidgetEvent);
@@ -52,11 +51,10 @@ vtkScribbleInteractorStyle::vtkScribbleInteractorStyle()
 
 void vtkScribbleInteractorStyle::InitializeTracer(vtkImageActor* imageActor)
 {
-  this->Interactor->GetRenderWindow()->GetRenderers()->GetFirstRenderer()->AddActor(imageActor);
   this->Tracer->SetInteractor(this->Interactor);
   this->Tracer->SetViewProp(imageActor);
   this->Tracer->ProjectToPlaneOn();
-
+  this->Tracer->SnapToImageOn();
   this->Tracer->On();
 }
 
@@ -70,18 +68,14 @@ void vtkScribbleInteractorStyle::CatchWidgetEvent(vtkObject* caller, long unsign
     vtkSmartPointer<vtkPolyData>::New();
   tracer->GetPath(path);
 
-  this->StrokeUpdated(path, tracer->IsClosed());
+  this->StrokeUpdated(path, tracer->IsClosed()); // emit the update signal
 
   ClearTracer();
-
 };
-
 
 void vtkScribbleInteractorStyle::ClearTracer()
 {
-  // "Clear" the tracer. We must rely on the foreground and background actors to maintain the appropriate colors.
-  // If we did not clear the tracer, if we draw a foreground stroke (green) then switch to background mode, the last stoke would turn
-  // red until we finished drawing the next stroke.
+  // Clear the tracer.
   vtkSmartPointer<vtkPoints> emptyPoints =
     vtkSmartPointer<vtkPoints>::New();
   emptyPoints->InsertNextPoint(0, 0, 0);
@@ -89,12 +83,4 @@ void vtkScribbleInteractorStyle::ClearTracer()
 
   this->Tracer->InitializeHandles(emptyPoints);
   this->Tracer->Modified();
-
-  this->Refresh();
-}
-
-void vtkScribbleInteractorStyle::Refresh()
-{
-  this->Interactor->GetRenderWindow()->GetRenderers()->GetFirstRenderer()->Render();
-  this->Interactor->GetRenderWindow()->Render();
 }

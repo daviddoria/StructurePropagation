@@ -6,7 +6,7 @@ FIND_PACKAGE(Qt4 REQUIRED)
 INCLUDE(${QT_USE_FILE})
 
 QT4_WRAP_UI(UISrcs MainWindow.ui InnerWidget.ui)
-QT4_WRAP_CPP(MOCSrcs MainWindow.h InnerWidgetObject.h)
+QT4_WRAP_CPP(MOCSrcs MainWindow.h InnerWidgetObject.h ComputationThread.h)
 
 include_directories(${include_directories} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
@@ -35,3 +35,8 @@ ITKCommon ITKIO
 # Helpers.cpp StructurePropagationBase.cpp)
 # TARGET_LINK_LIBRARIES(StructurePropagation
 # ITKCommon ITKIO)
+
+#SUBDIRS( MySubDirectory )
+IF(EXISTS MySubDirectory)
+ADD_SUBDIRECTORY( MySubDirectory )
+ENDIF(EXISTS MySubDirectory)

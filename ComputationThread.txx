@@ -15,10 +15,23 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "InnerWidgetObject.h"
-
-InnerWidgetObject::InnerWidgetObject(QWidget *parent)
+template <typename TImage>
+void ComputationThread<TImage>::run()
 {
-  // Setup the GUI and connect all of the signals and slots
-  setupUi(this);
+  // When the thread is started, emit the signal to start the marquee progress bar
+  //std::cout << "emitting StartProgressSignal..." << std::endl;
+  Q_EMIT StartProgressSignal();
+
+  this->Propagation->PropagateStructure();
+
+  // When the function is finished, end the thread
+  exit();
+}
+
+template <typename TImage>
+void ComputationThread<TImage>::exit()
+{
+  // When the thread is stopped, emit the signal to stop the marquee progress bar
+  std::cout << "emitting StopProgressSignal..." << std::endl;
+  Q_EMIT StopProgressSignal();
 }

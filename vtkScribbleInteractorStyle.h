@@ -17,7 +17,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 /*
  * This class emits a signal when the users scribbles on the image.
-*/
+ */
 
 #ifndef vtkScribbleInteractorStyle_H
 #define vtkScribbleInteractorStyle_H
@@ -35,21 +35,18 @@ class vtkImageActor;
 class vtkScribbleInteractorStyle : public vtkInteractorStyleImage
 {
 public:
-  boost::signals2::signal<void (vtkPolyData*, bool)> StrokeUpdated;
-
+  // Constructors
   static vtkScribbleInteractorStyle* New();
   vtkTypeMacro(vtkScribbleInteractorStyle, vtkInteractorStyleImage);
-
   vtkScribbleInteractorStyle();
 
-  // Clear all strokes
-  void ClearStrokes();
+  // A signal to indicate that something has changed.
+  boost::signals2::signal<void (vtkPolyData*, bool)> StrokeUpdated;
 
   // Connect the tracer to the interactor, etc.
   void InitializeTracer(vtkImageActor* imageActor);
 
 private:
-  void Refresh();
 
   void ClearTracer();
 

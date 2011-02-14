@@ -15,12 +15,6 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/*
-This implementation is based on
-Image Completion With Structure Propagation
-
-*/
-
 #include "MainWindow.h"
 #include "InnerWidget.h"
 
@@ -30,6 +24,7 @@ MainWindow::MainWindow(QWidget *parent)
   setupUi(this);
   connect( this->actionOpen_Color_Image, SIGNAL( triggered() ), this, SLOT(actionOpen_Color_Image_triggered()) );
   connect( this->actionOpen_Grayscale_Image, SIGNAL( triggered() ), this, SLOT(actionOpen_Grayscale_Image_triggered()) );
+  connect( this->mnu_Exit, SIGNAL( triggered() ), this, SLOT(mnu_Exit_triggered()) );
 
 }
 
@@ -45,4 +40,9 @@ void MainWindow::actionOpen_Color_Image_triggered()
   InnerWidget<ColorImageType>* innerWidget = new InnerWidget<ColorImageType>(this);
   this->setCentralWidget(innerWidget);
   innerWidget->OpenFile();
+}
+
+void MainWindow::mnu_Exit_triggered()
+{
+  QCoreApplication::quit();
 }

@@ -38,6 +38,7 @@
     <addaction name="actionOpen_Color_Image"/>
     <addaction name="actionOpen_Grayscale_Image"/>
     <addaction name="actionSave_Result"/>
+    <addaction name="mnu_Exit"/>
    </widget>
    <widget class="QMenu" name="menuEdit">
     <property name="title">
@@ -72,6 +73,11 @@
   <action name="actionFlip_Image">
    <property name="text">
     <string>Flip Image</string>
+   </property>
+  </action>
+  <action name="mnu_Exit">
+   <property name="text">
+    <string>Exit</string>
    </property>
   </action>
  </widget>

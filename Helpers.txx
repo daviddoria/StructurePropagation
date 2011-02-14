@@ -1,3 +1,20 @@
+/*
+Copyright (C) 2011 David Doria, daviddoria@gmail.com
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include "itkCastImageFilter.h"
 #include "itkImageRegionConstIteratorWithIndex.h"
 #include "itkImageFileWriter.h"
@@ -158,6 +175,20 @@ double SquaredDifference(TPixelType pixel1, TPixelType pixel2)
   return (pixel1-pixel2).GetSquaredNorm();
 }
 
+template <typename TImage>
+void CopyPatchIntoImage(typename TImage::Pointer sourceImage, typename TImage::Pointer targetImage,
+                                   itk::ImageRegion<2> sourceRegion, itk::ImageRegion<2> targetRegion)
+{
+  itk::ImageRegionConstIterator<TImage> sourceImageIterator(sourceImage, sourceRegion);
+  itk::ImageRegionIterator<TImage> targetImageIterator(targetImage, targetRegion);
+
+  while(!sourceImageIterator.IsAtEnd())
+    {
+    targetImageIterator.Set(sourceImageIterator.Get());
+    ++sourceImageIterator;
+    ++targetImageIterator;
+    }
+}
 
 template <typename TImage>
 void CopySelfPatchIntoTargetRegion(typename TImage::Pointer image, MaskImageType::Pointer mask,
@@ -180,5 +211,66 @@ void CopySelfPatchIntoTargetRegion(typename TImage::Pointer image, MaskImageType
     ++maskIterator;
     }
 }
+
+template <typename TImage>
+void ChangeValue(typename TImage::Pointer image, typename TImage::PixelType sourceValue, typename TImage::PixelType targetValue)
+{
+  itk::ImageRegionIterator<TImage> imageIterator(image, image->GetLargestPossibleRegion());
+
+  while(!imageIterator.IsAtEnd())
+    {
+    if(imageIterator.Get() == sourceValue)
+      {
+      imageIterator.Set(targetValue);
+      }
+    ++imageIterator;
+    }
+}
+
+template <typename TImage>
+std::set<typename TImage::PixelType> GetUniqueValues(typename TImage::Pointer image)
+{
+  std::set<typename TImage::PixelType> values;
+  itk::ImageRegionConstIterator<TImage> imageIterator(image, image->GetLargestPossibleRegion());
+
+  while(!imageIterator.IsAtEnd())
+    {
+    values.insert(imageIterator.Get());
+    ++imageIterator;
+    }
+  return values;
+}
+
+
+template <typename TImage>
+std::set<typename TImage::PixelType> GetNonNegativeUniqueValues(typename TImage::Pointer image)
+{
+  std::set<typename TImage::PixelType> values;
+  itk::ImageRegionConstIterator<TImage> imageIterator(image, image->GetLargestPossibleRegion());
+
+  while(!imageIterator.IsAtEnd())
+    {
+    if(imageIterator.Get() >= 0)
+      {
+      values.insert(imageIterator.Get());
+      }
+    ++imageIterator;
+    }
+  return values;
+}
+
+template <typename T>
+bool ContainsElement(std::vector<T> vec, T element)
+{
+  for(unsigned int i = 0; i < vec.size(); i++)
+    {
+    if(vec[i] == element)
+      {
+      return true;
+      }
+    }
+  return false;
+}
+
 
 } // end namespace

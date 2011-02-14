@@ -1,3 +1,20 @@
+/*
+Copyright (C) 2011 David Doria, daviddoria@gmail.com
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include "Helpers.h"
 #include "Types.h"
 
@@ -17,6 +34,50 @@
 
 namespace Helpers
 {
+
+std::vector<itk::Index<2> > FindIntersections(UnsignedCharScalarImageType::Pointer image)
+{
+  // We defined an intersection as a pixel which has more than 2 non-zero neighbors
+  std::vector<itk::Index<2> > intersections;
+
+  itk::Size<2> radius;
+  radius.Fill(1);
+
+  typedef itk::ConstNeighborhoodIterator<UnsignedCharScalarImageType> NeighborhoodIteratorType;
+  NeighborhoodIteratorType iterator(radius, image,
+                                    image->GetLargestPossibleRegion());
+
+  std::vector<NeighborhoodIteratorType::OffsetType> neighbors = Helpers::CreateNeighborOffsetsInRadius(radius);
+
+  while(!iterator.IsAtEnd())
+    {
+    if(iterator.GetCenterPixel() <= 0)
+      {
+      ++iterator;
+      continue;
+      }
+    unsigned int neighborCounter = 0;
+    for(unsigned int i = 0; i < neighbors.size(); i++)
+      {
+      bool inBounds;
+      iterator.GetPixel(neighbors[i], inBounds);
+      if(inBounds)
+        {
+        if(iterator.GetPixel(neighbors[i]) > 0)
+          {
+          neighborCounter++;
+          }
+        }
+      }
+    if(neighborCounter > 2)
+      {
+      std::cout << neighborCounter << " neighbors." << std::endl;
+      intersections.push_back(iterator.GetIndex());
+      }
+    ++iterator;
+    }
+  return intersections;
+}
 
 bool IsIntersectTargetRegion(itk::ImageRegion<2> patch, UnsignedCharScalarImageType::Pointer mask)
 {
@@ -159,11 +220,13 @@ void WriteWhitePatches(itk::ImageRegion<2> imageRegion, std::vector<itk::ImageRe
   writer->Update();
 }
 
-void IndicesToBinaryImage(std::vector<itk::Index<2> > indices, UnsignedCharScalarImageType::Pointer image)
+void IndicesToBinaryImage(std::vector<itk::Index<2> > indices, itk::ImageRegion<2> imageRegion, UnsignedCharScalarImageType::Pointer image)
 {
   //std::cout << "Setting " << indices.size() << " points to non-zero." << std::endl;
 
   // Blank the image
+  image->SetRegions(imageRegion);
+  image->Allocate();
   image->FillBuffer(0);
 
   // Set the pixels of indices in list to 255
@@ -245,6 +308,38 @@ void ITKImageToVTKImage<UnsignedCharScalarImageType>(UnsignedCharScalarImageType
     }
 }
 
+void ApplyTransparencyMask(vtkImageData* image, UnsignedCharScalarImageType::Pointer mask, vtkImageData* maskedImage)
+{
+  int dims[3];
+  image->GetDimensions(dims);
+
+  maskedImage->SetDimensions(dims);
+  maskedImage->SetNumberOfScalarComponents(4);
+  maskedImage->SetScalarTypeToUnsignedChar();
+  maskedImage->AllocateScalars();
+
+  for(unsigned int i = 0; i < static_cast<unsigned int>(dims[0]); i++)
+    {
+    for(unsigned int j = 0; j < static_cast<unsigned int>(dims[1]); j++)
+      {
+      itk::Index<2> pixel;
+      pixel[0] = i;
+      pixel[1] = j;
+
+      unsigned char* value = static_cast<unsigned char*>(image->GetScalarPointer(pixel[0], pixel[1],0));
+
+      if(mask->GetPixel(pixel)) // if the pixel is in the masked region
+        {
+        value[3] = 255; // we want it to be visible (opaque)
+        }
+      else
+        {
+        value[3] = 0; // we want it to be invisible (transparent)
+        }
+      } // end j loop
+    } // end i loop
+}
+
 void VTKImageToITKImage(vtkImageData* image, UnsignedCharScalarImageType::Pointer outputImage)
 {
   if(image->GetNumberOfScalarComponents() > 1)
@@ -321,7 +416,7 @@ std::vector<itk::Index<2> > PolyDataToPixelList(vtkPolyData* polydata)
   return allIndices;
 }
 
-std::vector<itk::Offset<2> > CreateOffsetsInRadius(itk::Size<2> radius)
+std::vector<itk::Offset<2> > CreateNeighborOffsetsInRadius(itk::Size<2> radius)
 {
   std::vector<itk::Offset<2> > neighbors;
 
@@ -398,11 +493,12 @@ unsigned int CountNonZeroPixels(UnsignedCharScalarImageType::Pointer image)
 }
 
 
-void GetDilatedImage(UnsignedCharScalarImageType::Pointer inputImage, UnsignedCharScalarImageType::Pointer dilatedImage)
+void GetDilatedImage(UnsignedCharScalarImageType::Pointer inputImage, UnsignedCharScalarImageType::Pointer dilatedImage,
+                     unsigned int dilationRadius)
 {
   typedef itk::BinaryBallStructuringElement<UnsignedCharScalarImageType::PixelType,2> StructuringElementType;
   StructuringElementType structuringElement;
-  structuringElement.SetRadius(2);
+  structuringElement.SetRadius(dilationRadius);
   structuringElement.CreateStructuringElement();
 
   typedef itk::BinaryDilateImageFilter <UnsignedCharScalarImageType, UnsignedCharScalarImageType, StructuringElementType>
@@ -444,72 +540,95 @@ void NumberPixels(UnsignedCharScalarImageType::Pointer binaryImage, IntScalarIma
     }
 }
 
-void ClusterNumberedPixels(IntScalarImageType::Pointer numberedPixels, IntScalarImageType::Pointer clusteredPixels)
+void GrowNumberedPixelClusters(IntScalarImageType::Pointer numberedPixels, IntScalarImageType::Pointer clusteredPixels, unsigned int numberToSkip)
 {
+  std::cout << "Starting GrowNumberedPixelClusters..." << std::endl;
+
+  // Input: numberedPixels - an image where each valid pixel is an id >= 0
+  // Output: clusteredPixels - a modified version of numberedPixels where the regions of each id has grown
+  // Details: The function expand the region associated with each label
+
+
+  // Initialize by making the output the same as the input
   DeepCopy<IntScalarImageType>(numberedPixels, clusteredPixels);
 
-  itk::Image<bool, 2>::Pointer visitedImage = itk::Image<bool, 2>::New();
-  visitedImage->SetRegions(numberedPixels->GetLargestPossibleRegion());
-  visitedImage->Allocate();
-  visitedImage->FillBuffer(0);
+  std::set<int> valuesSet = GetNonNegativeUniqueValues<IntScalarImageType>(clusteredPixels);
+  std::vector<unsigned int> valuesVector(valuesSet.begin(), valuesSet.end());
 
-  itk::Size<2> radius;
-  radius.Fill(1);
-
-  typedef itk::NeighborhoodIterator<IntScalarImageType> NeighborhoodIteratorType;
-  NeighborhoodIteratorType iterator(radius, numberedPixels,
-                                    numberedPixels->GetLargestPossibleRegion());
-
-  std::vector<NeighborhoodIteratorType::OffsetType> neighbors = Helpers::CreateOffsetsInRadius(radius);
-
-  unsigned int numberOfChangedPixels = 0;
-  while(!iterator.IsAtEnd())
+  for(unsigned int i = 0; i < valuesVector.size(); i++)
     {
-    if(iterator.GetCenterPixel() < 0) //skip negative pixels - these are not on the line
+    if(i % numberToSkip == 0)
       {
-      ++iterator;
-      continue;
+      continue; // don't blank the label of every 'numberToSkip' pixels
       }
-    if(visitedImage->GetPixel(iterator.GetIndex())) // skip pixels which have already been visited
-      {
-      ++iterator;
-      continue;
-      }
-
-    for(unsigned int i = 0; i < neighbors.size(); i++)
-      {
-      bool inBounds;
-      iterator.GetPixel(neighbors[i], inBounds);
-      if(inBounds)
-        {
-        if(iterator.GetPixel(neighbors[i]) >= 0) // the neighbor must also be a valid pixel (on the line)
-          {
-          if(!visitedImage->GetPixel(iterator.GetIndex() + neighbors[i]))
-            {
-            //std::cout << "Changing " << clusteredPixels->GetPixel(iterator.GetIndex() + neighbors[i])
-              //        << " to " << iterator.GetCenterPixel() << std::endl;
-            clusteredPixels->SetPixel(iterator.GetIndex() + neighbors[i], iterator.GetCenterPixel()); // expand label
-            visitedImage->SetPixel(iterator.GetIndex() + neighbors[i], 1); // mark as visited
-            numberOfChangedPixels++;
-            }
-          } // end if pixel is positive
-        } // end if inbounds
-
-      } // end neighbors loop
-
-    visitedImage->SetPixel(iterator.GetIndex(), 1); // mark as visited
-    ++iterator;
+    ChangeValue<IntScalarImageType>(clusteredPixels,valuesVector[i], -2); // mark pixels to be filled with -2
     }
-  //std::cout << "There were " << numberOfChangedPixels << " changed pixels." << std::endl;
-  Helpers::WriteColorMappedImage<IntScalarImageType>(clusteredPixels, "ClusteredPixelsBeforeRelabel.png");
+
+  std::vector<itk::Index<2> > pixelsToFill = FindPixelsWithValue<IntScalarImageType>(clusteredPixels, -2);
+  std::vector<itk::Index<2> > validPixels = GetNonNegativePixels(clusteredPixels);
+
+  for(unsigned int currentPixelId = 0; currentPixelId < pixelsToFill.size(); currentPixelId++) // loop over line pixels
+    {
+    unsigned int closestIndexId = FindClosestIndex(validPixels, pixelsToFill[currentPixelId]);
+    clusteredPixels->SetPixel(pixelsToFill[currentPixelId], clusteredPixels->GetPixel(validPixels[closestIndexId]));
+    }
 
   RelabelSequential(clusteredPixels);
+
+  std::cout << "Finished ClusterNumberedPixels!" << std::endl;
 }
+
+
+void GrowNumberedPixelClustersWithIntersections(IntScalarImageType::Pointer numberedPixels, IntScalarImageType::Pointer clusteredPixels,
+                                                unsigned int numberToSkip, std::vector<itk::Index<2> > intersections)
+{
+  std::cout << "Starting GrowNumberedPixelClustersWithIntersections..." << std::endl;
+
+  // Input: numberedPixels - an image where each valid pixel is an id >= 0
+  // Output: clusteredPixels - a modified version of numberedPixels where the regions of each id has grown
+  // Details: The function expand the region associated with each label
+
+  // Initialize by making the output the same as the input
+  DeepCopy<IntScalarImageType>(numberedPixels, clusteredPixels);
+
+  std::set<int> valuesSet = GetNonNegativeUniqueValues<IntScalarImageType>(clusteredPixels);
+  std::vector<unsigned int> valuesVector(valuesSet.begin(), valuesSet.end());
+
+  // Change labels ignoring intersections
+  for(unsigned int i = 0; i < valuesVector.size(); i++)
+    {
+    if(i % numberToSkip == 0)
+      {
+      continue; // don't blank the label of every 'numberToSkip' pixels
+      }
+    ChangeValue<IntScalarImageType>(clusteredPixels,valuesVector[i], -2); // mark pixels to be filled with -2
+    }
+
+  // Change labels of intersections back to the original labels
+  for(unsigned int i = 0; i < intersections.size(); i++)
+    {
+    clusteredPixels->SetPixel(intersections[i], numberedPixels->GetPixel(intersections[i]));
+    }
+
+  std::vector<itk::Index<2> > pixelsToFill = FindPixelsWithValue<IntScalarImageType>(clusteredPixels, -2);
+  std::vector<itk::Index<2> > validPixels = GetNonNegativePixels(clusteredPixels);
+
+  for(unsigned int currentPixelId = 0; currentPixelId < pixelsToFill.size(); currentPixelId++) // loop over line pixels
+    {
+    unsigned int closestIndexId = FindClosestIndex(validPixels, pixelsToFill[currentPixelId]);
+    clusteredPixels->SetPixel(pixelsToFill[currentPixelId], clusteredPixels->GetPixel(validPixels[closestIndexId]));
+    }
+
+  RelabelSequential(clusteredPixels);
+
+  std::cout << "Finished ClusterNumberedPixels!" << std::endl;
+}
+
 
 std::vector<itk::Index<2> > GetLabelCenters(IntScalarImageType::Pointer image)
 {
   int maxValue = GetMaxValue<IntScalarImageType>(image);
-  std::cout << "GetLabelCenters: MaxValue = " << maxValue << std::endl;
+  //std::cout << "GetLabelCenters: MaxValue = " << maxValue << std::endl;
 
   itk::ImageRegionIterator<IntScalarImageType> imageIterator(image, image->GetLargestPossibleRegion());
   std::vector<itk::Index<2> > labelCenters;
@@ -521,6 +640,46 @@ std::vector<itk::Index<2> > GetLabelCenters(IntScalarImageType::Pointer image)
     //std::cout << "There are " << labelPixels.size() << " pixels with label " << i << std::endl;
 
     labelCenters.push_back(AverageIndex(labelPixels));
+    }
+
+  return labelCenters;
+}
+
+
+std::vector<itk::Index<2> > GetLabelCentersWithIntersections(IntScalarImageType::Pointer image, std::vector<itk::Index<2> > intersections)
+{
+  int maxValue = GetMaxValue<IntScalarImageType>(image);
+  //std::cout << "GetLabelCenters: MaxValue = " << maxValue << std::endl;
+  std::cout << "GetLabelCenters: number of intersections = " << intersections.size() << std::endl;
+
+  itk::ImageRegionIterator<IntScalarImageType> imageIterator(image, image->GetLargestPossibleRegion());
+  std::vector<itk::Index<2> > labelCenters;
+
+  for(int i = 0; i <= maxValue; i++)
+    {
+    std::vector<itk::Index<2> > labelPixels = FindPixelsWithValue<IntScalarImageType>(image, i);
+
+    //std::cout << "There are " << labelPixels.size() << " pixels with label " << i << std::endl;
+    bool containsIntersection = false;
+    itk::Index<2> containedIntersection;
+    for(unsigned int intersectionId = 0; intersectionId < intersections.size(); intersectionId++)
+      {
+      if(ContainsElement<itk::Index<2> >(labelPixels, intersections[intersectionId]))
+        {
+        std::cout << "Contains intersection!!!" << std::endl;
+        containsIntersection = true;
+        containedIntersection = intersections[intersectionId];
+        break;
+        }
+      }
+    if(containsIntersection)
+      {
+      labelCenters.push_back(containedIntersection);
+      }
+    else
+      {
+      labelCenters.push_back(AverageIndex(labelPixels));
+      }
     }
 
   return labelCenters;
@@ -545,6 +704,7 @@ itk::Index<2> AverageIndex(std::vector<itk::Index<2> > pixels)
 
 void RelabelSequential(IntScalarImageType::Pointer image)
 {
+  //std::cout << "Starting RelabelSequential..." << std::endl;
   // Add all of the values in the image to a set
   itk::ImageRegionConstIterator<IntScalarImageType> inputIterator(image, image->GetLargestPossibleRegion());
 
@@ -603,6 +763,7 @@ void RelabelSequential(IntScalarImageType::Pointer image)
     std::cout << "RelabelSequential Test: Label " << i << " has " << number << " pixels." << std::endl;
     }
 */
+  //std::cout << "Finished RelabelSequential!" << std::endl;
 }
 
 void WritePixels(itk::Size<2> imageSize, std::vector<itk::Index<2> > pixels, std::string filename)
@@ -615,7 +776,7 @@ void WritePixels(itk::Size<2> imageSize, std::vector<itk::Index<2> > pixels, std
   image->Allocate();
   image->FillBuffer(0);
 
-  std::cout << "WritePixels: Writing " << pixels.size() << " pixels." << std::endl;
+  //std::cout << "WritePixels: Writing " << pixels.size() << " pixels." << std::endl;
 
   for(unsigned int i = 0; i < pixels.size(); i++)
     {
@@ -625,4 +786,132 @@ void WritePixels(itk::Size<2> imageSize, std::vector<itk::Index<2> > pixels, std
   WriteImage<UnsignedCharScalarImageType>(image, filename);
 }
 
+double DistanceBetweenIndices(itk::Index<2> pixel1, itk::Index<2> pixel2)
+{
+  itk::Point<double,2> p1;
+  p1[0] = pixel1[0];
+  p1[1] = pixel1[1];
+
+  itk::Point<double,2> p2;
+  p2[0] = pixel2[0];
+  p2[1] = pixel2[1];
+
+  return p1.EuclideanDistanceTo(p2);
+}
+
+unsigned int FindClosestIndex(std::vector<itk::Index<2> > listOfPixels, itk::Index<2> queryPixel)
+{
+  double minimumDistance = 1e9;
+  unsigned int closestIndex = 0;
+  for(unsigned int i = 0; i < listOfPixels.size(); i++)
+    {
+    double distance = DistanceBetweenIndices(listOfPixels[i], queryPixel);
+    if(distance < minimumDistance)
+      {
+      minimumDistance = distance;
+      closestIndex = i;
+      }
+    }
+  return closestIndex;
+}
+
+int GetFirstNonNegativeValidNeighbor(IntScalarImageType::Pointer image, itk::Index<2> pixel)
+{
+
+  itk::Size<2> radius;
+  radius.Fill(1);
+
+  // Create a single pixel region - we only want to traverse the neighborhood of the iterator once
+  itk::ImageRegion<2> region(pixel, radius);
+
+  typedef itk::NeighborhoodIterator<IntScalarImageType> NeighborhoodIteratorType;
+  NeighborhoodIteratorType iterator(radius, image, region);
+
+  std::vector<NeighborhoodIteratorType::OffsetType> neighbors = Helpers::CreateNeighborOffsetsInRadius(radius);
+
+  while(!iterator.IsAtEnd()) // this should only be one time
+    {
+    for(unsigned int i = 0; i < neighbors.size(); i++)
+      {
+      bool inBounds;
+      iterator.GetPixel(neighbors[i], inBounds);
+      if(inBounds)
+        {
+        std::cout << "Pixel " << i << " " << iterator.GetPixel(neighbors[i]) << std::endl;
+        if(iterator.GetPixel(neighbors[i]) >= 0)
+          {
+          return iterator.GetPixel(neighbors[i]);
+          }
+        }
+      }
+    ++iterator;
+    }
+
+  std::cerr << "GetFirstNonNegativeValidNeighbor: No valid neighbors!" << std::endl;
+  exit(-1);
+}
+
+std::vector<itk::Index<2> > GetNonNegativeValidNeighbors(IntScalarImageType::Pointer image, itk::Index<2> pixel)
+{
+  //std::cout << "Starting GetNonNegativeValidNeighbors..." << std::endl;
+  std::vector<itk::Index<2> > nonNegativeValidNeighbors;
+
+  if(image->GetPixel(pixel) < 0)
+    {
+    std::cout << "GetNonNegativeValidNeighbors: Zero neighbors!" << std::endl;
+    return nonNegativeValidNeighbors;
+    }
+
+  itk::Size<2> radius;
+  radius.Fill(1);
+
+  // Create a single pixel region - we only want to traverse the neighborhood of the iterator once
+  itk::ImageRegion<2> region(pixel, radius);
+
+  typedef itk::NeighborhoodIterator<IntScalarImageType> NeighborhoodIteratorType;
+  NeighborhoodIteratorType iterator(radius, image, region);
+
+  std::vector<NeighborhoodIteratorType::OffsetType> neighbors = Helpers::CreateNeighborOffsetsInRadius(radius);
+
+  while(!iterator.IsAtEnd()) // this should only be one time
+    {
+    for(unsigned int i = 0; i < neighbors.size(); i++)
+      {
+      bool inBounds;
+      iterator.GetPixel(neighbors[i], inBounds);
+      if(inBounds)
+        {
+        if(iterator.GetPixel(neighbors[i]) >= 0)
+          {
+          nonNegativeValidNeighbors.push_back(iterator.GetIndex() + neighbors[i]);
+          }
+        }
+      }
+    ++iterator;
+    }
+
+  //std::cout << "Finished GetNonNegativeValidNeighbors!" << std::endl;
+
+  return nonNegativeValidNeighbors;
+}
+
+std::vector<itk::Index<2> > GetNonNegativePixels(IntScalarImageType::Pointer image)
+{
+  std::vector<itk::Index<2> > nonNegativePixels;
+
+  itk::ImageRegionConstIterator<IntScalarImageType> imageIterator(image, image->GetLargestPossibleRegion());
+
+  while(!imageIterator.IsAtEnd())
+    {
+    if(imageIterator.Get() >= 0)
+      {
+      nonNegativePixels.push_back(imageIterator.GetIndex());
+      }
+
+    ++imageIterator;
+    }
+  return nonNegativePixels;
+}
+
 } // end namespace
+

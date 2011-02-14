@@ -30,13 +30,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 template <typename TImage>
 StructurePropagation<TImage>::StructurePropagation()
 {
+  // Initializations
+  this->Image = TImage::New();
   this->Mask = UnsignedCharScalarImageType::New();
-  this->PatchRadius = 5;
   this->PropagationLineImage = UnsignedCharScalarImageType::New();
   this->PropagationLineSourceImage = UnsignedCharScalarImageType::New();
   this->PropagationLineTargetImage = UnsignedCharScalarImageType::New();
 
-  this->Image = TImage::New();
+  // Default Values
+  this->PatchRadius = 10;
+  this->StructureWeight = 50.0;
+  this->BoundaryMatchWeight = 2.0;
 }
 
 template <typename TImage>
@@ -82,7 +86,7 @@ double StructurePropagation<TImage>::UnaryCost(int node, int label)
 
   //std::cout << "Structure cost: " << structureCost << " " << "Completion cost: " << completionCost << std::endl;
 
-  return structureCost + completionCost;
+  return this->StructureWeight * structureCost + this->BoundaryMatchWeight * completionCost;
 }
 
 
@@ -202,6 +206,45 @@ void StructurePropagation<TImage>::CreateUnaryFactors(GraphicalModel &gm, Space 
 }
 
 template <typename TImage>
+void StructurePropagation<TImage>::ClearEverything()
+{
+  this->SourcePatchRegions.clear();
+  this->TargetPatchRegions.clear();
+  this->NodeLocations.clear();
+  this->Edges.clear();
+}
+
+template <typename TImage>
+void StructurePropagation<TImage>::WriteTargetPatches()
+{
+  typename TImage::Pointer targetImage = TImage::New();
+  targetImage->SetRegions(this->Image->GetLargestPossibleRegion());
+  targetImage->Allocate();
+  targetImage->FillBuffer(itk::NumericTraits<typename TImage::PixelType>::Zero);
+
+  for(unsigned int i = 0; i < this->TargetPatchRegions.size(); i++)
+    {
+    Helpers::CopyPatchIntoImage<TImage>(this->Image, targetImage, this->TargetPatchRegions[i], this->TargetPatchRegions[i]);
+    }
+  Helpers::CastAndWriteImage<TImage>(targetImage, "TargetPatches.png");
+}
+
+template <typename TImage>
+void StructurePropagation<TImage>::WriteSourcePatches()
+{
+  typename TImage::Pointer targetImage = TImage::New();
+  targetImage->SetRegions(this->Image->GetLargestPossibleRegion());
+  targetImage->Allocate();
+  targetImage->FillBuffer(itk::NumericTraits<typename TImage::PixelType>::Zero);
+
+  for(unsigned int i = 0; i < this->SourcePatchRegions.size(); i++)
+    {
+    Helpers::CopyPatchIntoImage<TImage>(this->Image, targetImage, this->SourcePatchRegions[i], this->SourcePatchRegions[i]);
+    }
+  Helpers::CastAndWriteImage<TImage>(targetImage, "SourcePatches.png");
+}
+
+template <typename TImage>
 void StructurePropagation<TImage>::PropagateStructure()
 {
   // The order of the following functions is important
@@ -209,6 +252,9 @@ void StructurePropagation<TImage>::PropagateStructure()
   CreateEdges();
   ComputePatchRegions();
   ExtractRegionsOfPropagationPath();
+
+  WriteSourcePatches();
+  WriteTargetPatches();
 
   Helpers::WritePixels(this->Image->GetLargestPossibleRegion().GetSize(), this->NodeLocations, "Nodes.png");
 
@@ -252,7 +298,7 @@ void StructurePropagation<TImage>::PropagateStructure()
                                            Helpers::GetCenteredRegionRadius(this->NodeLocations[i], this->PatchRadius));
     }
 
-  Helpers::CastAndWriteImage<TImage>(this->OutputImage, "result.png");
+  //Helpers::CastAndWriteImage<TImage>(this->OutputImage, "result.png");
 
   std::cout << "Finished propagating structure!" << std::endl;
 }
@@ -313,9 +359,7 @@ void StructurePropagation<TImage>::SetPatchRadius(unsigned int radius)
 template <typename TImage>
 void StructurePropagation<TImage>::CreateLineImages()
 {
-  this->PropagationLineImage->SetRegions(this->Mask->GetLargestPossibleRegion());
-  this->PropagationLineImage->Allocate();
-  Helpers::IndicesToBinaryImage(this->PropagationLine, this->PropagationLineImage);
+  Helpers::IndicesToBinaryImage(this->PropagationLine, this->Mask->GetLargestPossibleRegion(), this->PropagationLineImage);
 
   // Extract the part of the lines in the target region
   typedef itk::MaskImageFilter< UnsignedCharScalarImageType, UnsignedCharScalarImageType> MaskFilterType;
@@ -352,7 +396,8 @@ void StructurePropagation<TImage>::ComputeSourcePatchRegions()
   this->SourcePatchRegions.clear();
 
   UnsignedCharScalarImageType::Pointer dilatedLineImage = UnsignedCharScalarImageType::New();
-  Helpers::GetDilatedImage(this->PropagationLineSourceImage, dilatedLineImage);
+  Helpers::GetDilatedImage(this->PropagationLineSourceImage, dilatedLineImage, 1);
+  Helpers::WriteImage<UnsignedCharScalarImageType>(dilatedLineImage, "DilatedSourceLines.png");
 
   // The dilated source line image will bleed into the target region,
   // but this is ok because we ensure that only patches completely in the sourcce region are kept
@@ -361,6 +406,8 @@ void StructurePropagation<TImage>::ComputeSourcePatchRegions()
 
   itk::Size<2> patchSize;
   patchSize.Fill(this->PatchRadius*2 + 1);
+  //std::cout << "ComputeSourcePatchRegions: patchRadius " << this->PatchRadius << std::endl;
+  //std::cout << "ComputeSourcePatchRegions: patchSize " << patchSize << std::endl;
 
   for(unsigned int i = 0; i < dilatedLinePixelList.size(); i++)
     {
@@ -417,7 +464,7 @@ void StructurePropagation<TImage>::ExtractRegionsOfPropagationPath()
   // This function extracts the patches of the line so they can be used in the StructureCost computation
 
   // Output the line for testing
-  Helpers::WriteImage<UnsignedCharScalarImageType>(this->PropagationLineImage, "PropagationLine_ExtractRegionsOfPropagationPath.png");
+  //Helpers::WriteImage<UnsignedCharScalarImageType>(this->PropagationLineImage, "PropagationLine_ExtractRegionsOfPropagationPath.png");
 
   // Extract the regions of the propagation path
   this->SourceStrokePaths.clear();
@@ -465,29 +512,23 @@ void StructurePropagation<TImage>::CreateEdges()
   Helpers::WriteColorMappedImage<IntScalarImageType>(numberedPixels, "NumberedPixels.png");
   Helpers::WriteImage<IntScalarImageType>(numberedPixels, "NumberedPixels.mhd");
 
-  IntScalarImageType::Pointer clusteredPixels1 = IntScalarImageType::New();
-  Helpers::ClusterNumberedPixels(numberedPixels, clusteredPixels1);
-  Helpers::WriteColorMappedImage<IntScalarImageType>(clusteredPixels1, "ClusteredPixels1.png");
-  std::cout << "There are " << Helpers::CountNumberOfNonNegativeValues(clusteredPixels1) << " nodes after first clustering." << std::endl;
-  // cluster again
   IntScalarImageType::Pointer clusteredPixels = IntScalarImageType::New();
-  Helpers::ClusterNumberedPixels(clusteredPixels1, clusteredPixels);
-  Helpers::WriteColorMappedImage<IntScalarImageType>(clusteredPixels, "ClusteredPixels.png");
-  std::cout << "There are " << Helpers::CountNumberOfNonNegativeValues(clusteredPixels) << " nodes after final clustering." << std::endl;
+  Helpers::DeepCopy<IntScalarImageType>(numberedPixels, clusteredPixels);
 
-  //Helpers::WriteImage<IntScalarImageType>(clusteredPixels, "ClusteredPixels.mhd");
+  std::vector<itk::Index<2> > intersections = Helpers::FindIntersections(this->PropagationLineTargetImage);
+  std::cout << "There are " << intersections.size() << " intersections." << std::endl;
+  Helpers::GrowNumberedPixelClustersWithIntersections(clusteredPixels, clusteredPixels, this->PatchRadius/2, intersections);
 
-  //// for testing only ////
+  //Helpers::GrowNumberedPixelClusters(clusteredPixels, clusteredPixels, this->PatchRadius);
+  //Helpers::GrowNumberedPixelClusters(clusteredPixels, clusteredPixels, this->PatchRadius/2);
+
   /*
-  for(unsigned int i = 0; i < Helpers::CountNumberOfNonNegativeValues(clusteredPixels); i++)
-    {
-    unsigned int number = Helpers::CountPixelsWithValue<IntScalarImageType>(clusteredPixels, i);
-    std::cout << "CreateEdges Test: Label " << i << " has " << number << " pixels." << std::endl;
-    }
+  std::cout << "CreateEdges: There are " << Helpers::CountNumberOfNonNegativeValues(clusteredPixels)
+            << " nodes." << std::endl;
   */
-  /////
 
-  this->NodeLocations = Helpers::GetLabelCenters(clusteredPixels);
+  //this->NodeLocations = Helpers::GetLabelCenters(clusteredPixels);
+  this->NodeLocations = Helpers::GetLabelCentersWithIntersections(clusteredPixels, intersections);
 
   //std::cout << "CreateEdges: There are " << this->NodeLocations.size() << " nodes." << std::endl;
 
@@ -500,7 +541,7 @@ void StructurePropagation<TImage>::CreateEdges()
                                     clusteredPixels->GetLargestPossibleRegion());
 
   //std::vector<NeighborhoodIteratorType::OffsetType> neighbors;
-  std::vector<NeighborhoodIteratorType::OffsetType> neighbors = Helpers::CreateOffsetsInRadius(radius);
+  std::vector<NeighborhoodIteratorType::OffsetType> neighbors = Helpers::CreateNeighborOffsetsInRadius(radius);
   //std::cout << "There are " << neighbors.size() << " neighbors." << std::endl;
 
   while(!iterator.IsAtEnd())
@@ -553,7 +594,7 @@ void StructurePropagation<TImage>::WriteEdges()
   edgeImage->Allocate();
   edgeImage->FillBuffer(0);
 
-  std::cout << "There are " << this->Edges.size() << " edges to write." << std::endl;
+  //std::cout << "WriteEdges: There are " << this->Edges.size() << " edges to write." << std::endl;
 
   for(unsigned int i = 0; i < this->Edges.size(); i++)
     {

@@ -38,6 +38,7 @@ public Q_SLOTS:
   // Menu items
   void actionOpen_Color_Image_triggered();
   void actionOpen_Grayscale_Image_triggered();
+  void mnu_Exit_triggered();
 
 };
 
