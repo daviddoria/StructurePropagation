@@ -30,7 +30,7 @@
    <property name="geometry">
     <rect>
      <x>40</x>
-     <y>520</y>
+     <y>540</y>
      <width>111</width>
      <height>22</height>
     </rect>
@@ -46,7 +46,7 @@
    <property name="geometry">
     <rect>
      <x>200</x>
-     <y>460</y>
+     <y>450</y>
      <width>31</width>
      <height>17</height>
     </rect>
@@ -59,7 +59,7 @@
    <property name="geometry">
     <rect>
      <x>40</x>
-     <y>500</y>
+     <y>520</y>
      <width>121</width>
      <height>22</height>
     </rect>
@@ -82,28 +82,6 @@
    </property>
    <property name="text">
     <string>Load Mask</string>
-   </property>
-  </widget>
-  <widget class="QSlider" name="sldPatchRadius">
-   <property name="geometry">
-    <rect>
-     <x>40</x>
-     <y>460</y>
-     <width>160</width>
-     <height>19</height>
-    </rect>
-   </property>
-   <property name="minimum">
-    <number>1</number>
-   </property>
-   <property name="maximum">
-    <number>30</number>
-   </property>
-   <property name="value">
-    <number>10</number>
-   </property>
-   <property name="orientation">
-    <enum>Qt::Horizontal</enum>
    </property>
   </widget>
   <widget class="QCheckBox" name="chkScale">
@@ -149,7 +127,7 @@
    <property name="geometry">
     <rect>
      <x>50</x>
-     <y>440</y>
+     <y>430</y>
      <width>91</width>
      <height>17</height>
     </rect>
@@ -227,7 +205,7 @@
    <property name="geometry">
     <rect>
      <x>40</x>
-     <y>540</y>
+     <y>560</y>
      <width>161</width>
      <height>22</height>
     </rect>
@@ -243,7 +221,7 @@
    <property name="geometry">
     <rect>
      <x>40</x>
-     <y>560</y>
+     <y>580</y>
      <width>121</width>
      <height>22</height>
     </rect>
@@ -281,6 +259,70 @@
     <string>Screenshot</string>
    </property>
   </widget>
+  <widget class="QScrollBar" name="scrPatchRadius">
+   <property name="geometry">
+    <rect>
+     <x>30</x>
+     <y>450</y>
+     <width>160</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="maximum">
+    <number>20</number>
+   </property>
+   <property name="value">
+    <number>10</number>
+   </property>
+   <property name="orientation">
+    <enum>Qt::Horizontal</enum>
+   </property>
+  </widget>
+  <widget class="QScrollBar" name="scrSourceLineWidth">
+   <property name="geometry">
+    <rect>
+     <x>30</x>
+     <y>500</y>
+     <width>160</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="maximum">
+    <number>10</number>
+   </property>
+   <property name="value">
+    <number>3</number>
+   </property>
+   <property name="orientation">
+    <enum>Qt::Horizontal</enum>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label">
+   <property name="geometry">
+    <rect>
+     <x>40</x>
+     <y>480</y>
+     <width>131</width>
+     <height>17</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Source line width:</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="lblSourceLineWidth">
+   <property name="geometry">
+    <rect>
+     <x>200</x>
+     <y>500</y>
+     <width>21</width>
+     <height>17</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>3</string>
+   </property>
+  </widget>
  </widget>
  <customwidgets>
   <customwidget>
@@ -292,18 +334,34 @@
  <resources/>
  <connections>
   <connection>
-   <sender>sldPatchRadius</sender>
+   <sender>scrPatchRadius</sender>
    <signal>valueChanged(int)</signal>
    <receiver>lblPatchRadius</receiver>
    <slot>setNum(int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>87</x>
-     <y>743</y>
+     <x>109</x>
+     <y>457</y>
     </hint>
     <hint type="destinationlabel">
-     <x>197</x>
-     <y>742</y>
+     <x>215</x>
+     <y>458</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>scrSourceLineWidth</sender>
+   <signal>valueChanged(int)</signal>
+   <receiver>lblSourceLineWidth</receiver>
+   <slot>setNum(int)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>109</x>
+     <y>507</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>210</x>
+     <y>508</y>
     </hint>
    </hints>
   </connection>

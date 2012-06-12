@@ -15,6 +15,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// ITK
 #include "itkBinaryNotImageFilter.h"
 #include "itkCastImageFilter.h"
 #include "itkContourMeanDistanceImageFilter.h"
@@ -25,7 +26,42 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "itkPasteImageFilter.h"
 #include "itkRegionOfInterestImageFilter.h"
 
+// Custom
 #include "Helpers.h"
+
+// OpenGM
+#include <opengm/inference/treereweightedbeliefpropagation.hxx>
+#include <opengm/inference/beliefpropagation.hxx>
+
+
+template<class BP>
+class BeliefPropagationProtocolVisitor {
+public:
+  typedef BP bp_type;
+  typedef typename bp_type::value_type value_type;
+
+  BeliefPropagationProtocolVisitor() : iteration(0){}
+
+  void operator()(const bp_type& bp)
+  {
+    std::vector<size_t> state;
+    bp.arg(state);
+
+    value_type value = bp.graphicalModel().evaluate(state);
+
+    value_type distance = bp.convergence();
+
+    std::cout << "iteration " << iteration
+        << ": energy=" <<  value
+        << ", distance=" << distance
+        << std::endl;
+    iteration++;
+  }
+
+private:
+  unsigned int iteration;
+
+};
 
 template <typename TImage>
 StructurePropagation<TImage>::StructurePropagation()
@@ -41,6 +77,7 @@ StructurePropagation<TImage>::StructurePropagation()
   this->PatchRadius = 10;
   this->StructureWeight = 50.0;
   this->BoundaryMatchWeight = 2.0;
+  this->SourceLineWidth = 3;
 }
 
 template <typename TImage>
@@ -54,6 +91,12 @@ void StructurePropagation<TImage>::SetImage(typename TImage::Pointer image)
 {
   //this->Image = image;
   this->Image->Graft(image);
+}
+
+template <typename TImage>
+void StructurePropagation<TImage>::SetSourceLineWidth(unsigned int width)
+{
+  this->SourceLineWidth = width;
 }
 
 
@@ -188,7 +231,7 @@ void StructurePropagation<TImage>::CreateUnaryFactors(GraphicalModel &gm, Space 
 
   //std::cout << "There are " << numberOfNodes << " nodes." << std::endl;
   //std::cout << "There are " << numberOfLabels << " labels." << std::endl;
-
+  unsigned int numberOfUnaryFactors = 0;
   for(unsigned int node = 0; node < numberOfNodes; node++)
     {
     std::vector<size_t> unaryIndices(1, node);
@@ -197,12 +240,13 @@ void StructurePropagation<TImage>::CreateUnaryFactors(GraphicalModel &gm, Space 
       {
       double cost = UnaryCost(node, label);
       unaryFactor(label) = cost;
+      numberOfUnaryFactors++;
       //std::cout << "The cost of assigning node " << node << " = " << label << " is " << unaryFactor(label) << std::endl;
       }
 
     gm.addFactor(unaryFactor);
     }
-  std::cout << "Finished creating unary factors!" << std::endl;
+  std::cout << "Finished creating unary factors! (There were " << numberOfUnaryFactors << ")" << std::endl;
 }
 
 template <typename TImage>
@@ -247,6 +291,20 @@ void StructurePropagation<TImage>::WriteSourcePatches()
 template <typename TImage>
 void StructurePropagation<TImage>::PropagateStructure()
 {
+  // Find intersections of target line with hole boundary and add them as additional intersections (so nodes are required to be placed there)
+  for(std::set<itk::Index<2>, IndexComparison>::iterator iterator = this->PropagationLine.begin();
+      iterator != this->PropagationLine.end(); iterator++)
+    {
+    if(this->Mask->GetPixel(*iterator)) // the pixel is in the target region
+      {
+      if(Helpers::HasNeighborWithValue<UnsignedCharScalarImageType>(this->Mask, *iterator, 0))
+        {
+        this->PropagationLineIntersections.insert(*iterator);
+        std::cout << "Inserted boundary intersection." << std::endl;
+        }
+      }
+    }
+
   // The order of the following functions is important
   CreateLineImages();
   CreateEdges();
@@ -263,6 +321,9 @@ void StructurePropagation<TImage>::PropagateStructure()
   unsigned int numberOfLabels = this->SourcePatchRegions.size();
   std::cout << "PropagateStructure: There are " << numberOfNodes << " nodes." << std::endl;
   std::cout << "PropagateStructure: There are " << numberOfLabels << " labels." << std::endl;
+  std::cout << "There are " << Helpers::CountNonZeroPixels(this->PropagationLineTargetImage) << " pixels in target lines.";
+  std::cout << "The ratio of pixels to nodes is " << static_cast<double>(Helpers::CountNonZeroPixels(this->PropagationLineTargetImage))/
+                                                      static_cast<double>(numberOfNodes);
 
   std::vector<size_t> nodes(numberOfNodes, numberOfLabels);
   Space space(nodes.begin(), nodes.end());
@@ -272,16 +333,18 @@ void StructurePropagation<TImage>::PropagateStructure()
   CreateBinaryFactors(gm, space);
 
   ////////////// Optimize ///////////////
-  typedef opengm::TreeReweightedBeliefPropagation<GraphicalModel, opengm::Minimizer, opengm::MaxDistance> TRBP;
+  typedef opengm::TreeReweightedBeliefPropagation<GraphicalModel, opengm::Minimizer, opengm::MaxDistance> BP;
+  //typedef opengm::BeliefPropagation<GraphicalModel, opengm::Minimizer, opengm::MaxDistance> BP;
   std::cout << "Setting up tree-reweighted belief propagation... " << std::endl;
-  TRBP::Parameter para;
+  BP::Parameter para;
   para.maximumNumberOfSteps_ = 100;
 
-  TRBP trbp(gm, para);
-  trbp.infer();
+  BP bp(gm, para);
+  BeliefPropagationProtocolVisitor<BP> visitor;
+  bp.infer(visitor);
 
   std::vector<size_t> result;
-  trbp.arg(result);
+  bp.arg(result);
 
   // Fill in the image with the best patches
   typedef itk::ImageDuplicator< TImage > ImageDuplicatorType;
@@ -289,7 +352,6 @@ void StructurePropagation<TImage>::PropagateStructure()
   duplicator->SetInputImage(this->Image);
   duplicator->Update();
 
-  //typename TImage::Pointer outputImage = duplicator->GetOutput();
   this->OutputImage = duplicator->GetOutput();
 
   for(unsigned int i = 0; i < numberOfNodes; i++)
@@ -315,6 +377,7 @@ void StructurePropagation<TImage>::CreateBinaryFactors(GraphicalModel &gm, Space
   //std::cout << "There are " << this->Edges.size() << " edges." << std::endl;
   //std::cout << "There are " << this->NodeLocations.size() << " nodes." << std::endl;
 
+  unsigned int numberOfBinaryFactors = 0;
   for(unsigned int edgeId = 0; edgeId < this->Edges.size(); edgeId++)
     {
     std::pair<unsigned int, unsigned int> edge = this->Edges[edgeId];
@@ -329,13 +392,14 @@ void StructurePropagation<TImage>::CreateBinaryFactors(GraphicalModel &gm, Space
       for(unsigned int labelB = 0; labelB < numberOfLabels; labelB++)
         {
         binaryFactor(labelA,labelB) = BinaryCost(edge.first, edge.second, labelA, labelB);
+        numberOfBinaryFactors++;
         //std::cout << "The cost of assigning node " << node << " = " << labelA << " and node+1 " << node+1 << " = " << labelB << " is " << binaryFactor(labelA, labelB) << std::endl;
         }
       }
     gm.addFactor(binaryFactor);
     }
 
-  std::cout << "Finished creating binary factors!" << std::endl;
+  std::cout << "Finished creating binary factors! (There are " << numberOfBinaryFactors << ")" << std::endl;
 }
 
 template <typename TImage>
@@ -345,9 +409,16 @@ void StructurePropagation<TImage>::SetMask(UnsignedCharScalarImageType::Pointer 
 }
 
 template <typename TImage>
-void StructurePropagation<TImage>::SetPropagationLine(std::vector<itk::Index<2> > propagationLine)
+void StructurePropagation<TImage>::SetPropagationLine(std::set<itk::Index<2>, IndexComparison > propagationLine)
 {
   this->PropagationLine = propagationLine;
+}
+
+
+template <typename TImage>
+void StructurePropagation<TImage>::SetPropagationLineIntersections(std::set<itk::Index<2>, IndexComparison > intersections)
+{
+  this->PropagationLineIntersections = intersections;
 }
 
 template <typename TImage>
@@ -396,7 +467,7 @@ void StructurePropagation<TImage>::ComputeSourcePatchRegions()
   this->SourcePatchRegions.clear();
 
   UnsignedCharScalarImageType::Pointer dilatedLineImage = UnsignedCharScalarImageType::New();
-  Helpers::GetDilatedImage(this->PropagationLineSourceImage, dilatedLineImage, 1);
+  Helpers::GetDilatedImage(this->PropagationLineSourceImage, dilatedLineImage, this->SourceLineWidth/2);
   Helpers::WriteImage<UnsignedCharScalarImageType>(dilatedLineImage, "DilatedSourceLines.png");
 
   // The dilated source line image will bleed into the target region,
@@ -515,9 +586,9 @@ void StructurePropagation<TImage>::CreateEdges()
   IntScalarImageType::Pointer clusteredPixels = IntScalarImageType::New();
   Helpers::DeepCopy<IntScalarImageType>(numberedPixels, clusteredPixels);
 
-  std::vector<itk::Index<2> > intersections = Helpers::FindIntersections(this->PropagationLineTargetImage);
-  std::cout << "There are " << intersections.size() << " intersections." << std::endl;
-  Helpers::GrowNumberedPixelClustersWithIntersections(clusteredPixels, clusteredPixels, this->PatchRadius/2, intersections);
+  //std::vector<itk::Index<2> > intersections = Helpers::FindIntersections(this->PropagationLineTargetImage);
+  std::cout << "There are " << this->PropagationLineIntersections.size() << " intersections." << std::endl;
+  Helpers::GrowNumberedPixelClustersWithIntersections(clusteredPixels, clusteredPixels, this->PatchRadius, this->PropagationLineIntersections);
 
   //Helpers::GrowNumberedPixelClusters(clusteredPixels, clusteredPixels, this->PatchRadius);
   //Helpers::GrowNumberedPixelClusters(clusteredPixels, clusteredPixels, this->PatchRadius/2);
@@ -528,7 +599,7 @@ void StructurePropagation<TImage>::CreateEdges()
   */
 
   //this->NodeLocations = Helpers::GetLabelCenters(clusteredPixels);
-  this->NodeLocations = Helpers::GetLabelCentersWithIntersections(clusteredPixels, intersections);
+  this->NodeLocations = Helpers::GetLabelCentersWithIntersections(clusteredPixels, this->PropagationLineIntersections);
 
   //std::cout << "CreateEdges: There are " << this->NodeLocations.size() << " nodes." << std::endl;
 

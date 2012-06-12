@@ -44,9 +44,6 @@ public Q_SLOTS:
   virtual void btnSaveResult_clicked() = 0;
   virtual void btnScreenshot_clicked() = 0;
 
-  // Other GUI elements
-  virtual void sldPatchRadius_valueChanged() = 0;
-
   // Checkboxes
   virtual void chkFlip_clicked() = 0;
   virtual void chkScale_clicked() = 0;

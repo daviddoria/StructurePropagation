@@ -42,7 +42,8 @@ vtkScribbleInteractorStyle::vtkScribbleInteractorStyle()
 {
   // Initializations
   this->Tracer = vtkSmartPointer<vtkImageTracerWidget>::New();
-  this->Tracer->GetLineProperty()->SetLineWidth(5);
+  //this->Tracer->GetLineProperty()->SetLineWidth(5);
+  this->Tracer->GetLineProperty()->SetLineWidth(3);
 
   // Update the selection when the EndInteraction event is fired.
   this->Tracer->AddObserver(vtkCommand::EndInteractionEvent, this, &vtkScribbleInteractorStyle::CatchWidgetEvent);
@@ -54,6 +55,7 @@ void vtkScribbleInteractorStyle::InitializeTracer(vtkImageActor* imageActor)
   this->Tracer->SetInteractor(this->Interactor);
   this->Tracer->SetViewProp(imageActor);
   this->Tracer->ProjectToPlaneOn();
+  this->Tracer->SetInput(imageActor->GetInput());
   this->Tracer->SnapToImageOn();
   this->Tracer->On();
 }

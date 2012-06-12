@@ -20,13 +20,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef StructurePropagation_H
 #define StructurePropagation_H
 
+// Custom
 #include "StructurePropagation.h"
 #include "Types.h"
+#include "IndexComparison.h"
 
+// OpenGM
 #include <opengm/explicitfactor.hxx>
 #include <opengm/graphicalmodel.hxx>
 #include <opengm/adder.hxx>
-#include <opengm/inference/treereweightedbeliefpropagation.hxx>
 #include <opengm/maxdistance.hxx>
 
 typedef double Energy;
@@ -51,8 +53,11 @@ public:
 
   // Mutators
   void SetMask(UnsignedCharScalarImageType::Pointer mask);
-  void SetPropagationLine(std::vector<itk::Index<2> > propagationLine);
+  //void SetPropagationLine(std::vector<itk::Index<2> > propagationLine);
+  void SetPropagationLine(std::set<itk::Index<2>, IndexComparison > propagationLine);
+  void SetPropagationLineIntersections(std::set<itk::Index<2>, IndexComparison > intersections);
   void SetPatchRadius(unsigned int radius);
+  void SetSourceLineWidth(unsigned int width);
   void SetImage(typename TImageType::Pointer image);
 
   // Accessors
@@ -65,6 +70,7 @@ private:
   // Weights for the UnaryCost function
   double StructureWeight;
   double BoundaryMatchWeight;
+  unsigned int SourceLineWidth;
 
   // Cost functions
   double UnaryCost(int node, int label);
@@ -88,7 +94,8 @@ private:
   // Data
   UnsignedCharScalarImageType::Pointer Mask;
   unsigned int PatchRadius;
-  std::vector<itk::Index<2> > PropagationLine;
+  std::set<itk::Index<2>, IndexComparison > PropagationLine;
+  std::set<itk::Index<2>, IndexComparison > PropagationLineIntersections;
 
   // Images of the propagation path.
   void CreateLineImages();

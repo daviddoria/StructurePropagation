@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vtkScribbleInteractorStyle.h"
 #include "ComputationThread.h"
 #include "InnerWidgetObject.h"
+#include "IndexComparison.h"
 
 // VTK
 #include <vtkSmartPointer.h>
@@ -48,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Forward declarations
 class vtkImageActor;
 class vtkRenderer;
+
 
 template <typename TImage>
 class InnerWidget : public InnerWidgetObject
@@ -78,9 +80,6 @@ public:
   void chkShowResult_clicked();
   void chkShowOriginal_clicked();
   void chkShowMask_clicked();
-
-  // Other GUI elements
-  void sldPatchRadius_valueChanged();
 
 protected:
 
@@ -127,8 +126,8 @@ protected:
   // Data
   UnsignedCharScalarImageType::Pointer Mask;
   //std::vector<itk::Index<2> > ColorPropagationLine;
-  std::set<itk::Index<2> > ColorPropagationLine;
-  std::set<itk::Index<2> > PropagationLineIntersections;
+  std::set<itk::Index<2>, IndexComparison > ColorPropagationLine;
+  std::set<itk::Index<2>, IndexComparison > PropagationLineIntersections;
   itk::ImageRegion<2> ImageRegion; // This is set when the image is opened. We sometimes need to know how big the image is.
 
   // Objects for the propagation path.

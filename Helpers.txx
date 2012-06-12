@@ -15,12 +15,19 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// ITK
 #include "itkCastImageFilter.h"
 #include "itkImageRegionConstIteratorWithIndex.h"
 #include "itkImageFileWriter.h"
+#include "itkNeighborhoodIterator.h"
 #include "itkRescaleIntensityImageFilter.h"
 #include "itkScalarToRGBColormapImageFilter.h"
+
+// Boost
 #include <boost/graph/graph_concepts.hpp>
+
+// Custom
+#include "DijkstraBinaryImage.h"
 
 namespace Helpers
 {
@@ -270,6 +277,105 @@ bool ContainsElement(std::vector<T> vec, T element)
       }
     }
   return false;
+}
+
+template <typename T>
+bool HasNeighborWithValue(typename T::Pointer image, itk::Index<2> pixel, typename T::PixelType value)
+{
+  itk::Size<2> radius;
+  radius.Fill(1);
+
+  // Create a single pixel region - we only want to traverse the neighborhood of the iterator once
+  itk::ImageRegion<2> region(pixel, radius);
+
+  typedef itk::NeighborhoodIterator<T> NeighborhoodIteratorType;
+  NeighborhoodIteratorType iterator(radius, image, region);
+
+  //std::vector<NeighborhoodIteratorType::OffsetType> neighbors = CreateNeighborOffsetsInRadius(radius);
+  std::vector<itk::Offset<2> > neighbors = CreateNeighborOffsetsInRadius(radius);
+
+  while(!iterator.IsAtEnd()) // this should only be one time
+    {
+    for(unsigned int i = 0; i < neighbors.size(); i++)
+      {
+      bool inBounds;
+      iterator.GetPixel(neighbors[i], inBounds);
+      if(inBounds)
+        {
+        if(iterator.GetPixel(neighbors[i]) == value)
+          {
+          return true;
+          }
+        }
+      }
+    ++iterator;
+    }
+  return false;
+}
+
+template <typename T>
+unsigned int FindClosestIndexGeodesic(typename T::Pointer image, std::vector<itk::Index<2> > listOfPixels,
+                                      itk::Index<2> queryPixel)
+{
+  std::cout << "There are " << listOfPixels.size() << " pixels to compute the path to." << std::endl;
+
+  int minimumDistance = itk::NumericTraits<int>::max();
+  unsigned int closestIndex = 0;
+  for(unsigned int i = 0; i < listOfPixels.size(); i++)
+    {
+    DijkstraBinaryImage<T> DistanceFilter;
+    DistanceFilter.SetImage(image);
+
+    itk::Index<2> startPoint = queryPixel;
+    itk::Index<2> endPoint = listOfPixels[i];
+
+    int distance = DistanceFilter.ComputeShortestPath(startPoint, endPoint).size();
+
+    if(distance < minimumDistance)
+      {
+      minimumDistance = distance;
+      closestIndex = i;
+      }
+    }
+  return closestIndex;
+}
+
+template <typename T>
+unsigned int FindClosestIndexWithMaxGeoDistance(std::vector<itk::Index<2> > listOfPixels, itk::Index<2> queryPixel,
+                                                typename T::Pointer image, int maxDistance)
+{
+  std::vector<IndexDistance> allDistances;
+
+  for(unsigned int i = 0; i < listOfPixels.size(); i++)
+    {
+    IndexDistance indexDistance;
+    double distance = DistanceBetweenIndices(listOfPixels[i], queryPixel);
+    indexDistance.Distance = distance;
+    indexDistance.Index = i;
+    allDistances.push_back(indexDistance);
+    }
+
+  std::sort(allDistances.begin(), allDistances.end());
+
+  for(int i = 0; i < allDistances.size(); i++)
+    {
+    DijkstraBinaryImage<T> dijkstra;
+    dijkstra.SetImage(image);
+    itk::Index<2> startPoint = queryPixel;
+    itk::Index<2> endPoint = listOfPixels[allDistances[i].Index];
+
+    int distance = dijkstra.ComputeShortestPath(startPoint, endPoint).size();
+    if(distance < maxDistance)
+      {
+      return allDistances[i].Index;
+      }
+    }
+
+  // Should never get here!
+  std::cerr << "FindClosestIndexWithMaxGeoDistance: There were no pixels with distance < maxDistance (" << maxDistance << ")!" << std::endl;
+  std::cout << "FindClosestIndexWithMaxGeoDistance: Closest is " << allDistances[0].Index << " at distance " << allDistances[0].Distance << std::endl;
+  //exit(-1);
+  return 0;
 }
 
 

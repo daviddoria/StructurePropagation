@@ -18,16 +18,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef HELPERS_H
 #define HELPERS_H
 
+// Custom
 #include "Types.h"
+#include "IndexComparison.h"
 
+// ITK
 #include "itkImage.h"
 #include "itkIndex.h"
 
+// VTK
 #include <vtkSmartPointer.h>
 #include <vtkImageData.h>
 #include <vtkPolyData.h>
 #include <vtkUnsignedCharArray.h>
 
+// STL
 #include <string>
 #include <set>
 
@@ -56,6 +61,9 @@ std::vector<itk::Index<2> > GetLabelCenters(IntScalarImageType::Pointer image);
 
 std::vector<itk::Index<2> > GetLabelCentersWithIntersections(IntScalarImageType::Pointer image, std::vector<itk::Index<2> > intersections);
 
+std::vector<itk::Index<2> > GetLabelCentersWithIntersections(IntScalarImageType::Pointer image,
+                                                             std::set<itk::Index<2>, IndexComparison > intersections);
+
 itk::Index<2> AverageIndex(std::vector<itk::Index<2> > pixels);
 
 void DrawLineInImage(UnsignedCharScalarImageType::Pointer image, itk::Index<2> p0, itk::Index<2> p1);
@@ -65,6 +73,9 @@ void GrowNumberedPixelClusters(IntScalarImageType::Pointer numberedPixels, IntSc
 
 void GrowNumberedPixelClustersWithIntersections(IntScalarImageType::Pointer numberedPixels, IntScalarImageType::Pointer clusteredPixels,
                                unsigned int numberToSkip, std::vector<itk::Index<2> > intersections);
+
+void GrowNumberedPixelClustersWithIntersections(IntScalarImageType::Pointer numberedPixels, IntScalarImageType::Pointer clusteredPixels,
+                               unsigned int numberToSkip, std::set<itk::Index<2>, IndexComparison> intersections);
 
 void NumberPixels(UnsignedCharScalarImageType::Pointer binaryImage, IntScalarImageType::Pointer numberedPixels);
 
@@ -83,6 +94,8 @@ double SumOfShortestDistances(std::vector<itk::Point<int, 2> > points1, std::vec
 
 // Mark each pixel at the specified 'indices' as a non-zero pixel in 'image'
 void IndicesToBinaryImage(std::vector<itk::Index<2> > indices, itk::ImageRegion<2> imageRegion, UnsignedCharScalarImageType::Pointer image);
+void IndicesToBinaryImage(std::set<itk::Index<2>, IndexComparison > indices, itk::ImageRegion<2> imageRegion,
+                          UnsignedCharScalarImageType::Pointer image);
 
 void MaskImage(vtkSmartPointer<vtkImageData> VTKImage, vtkSmartPointer<vtkImageData> VTKSegmentMask,
                vtkSmartPointer<vtkImageData> VTKMaskedImage);
@@ -106,6 +119,10 @@ bool IsIntersectTargetRegion(itk::ImageRegion<2> patch, UnsignedCharScalarImageT
 void WritePixels(itk::Size<2> imageSize, std::vector<itk::Index<2> > pixels, std::string filename);
 
 /////////////////// Templated functions (defined in Helpers.txx) /////////////////////////
+
+template <typename TImage>
+unsigned int FindClosestIndexGeodesic(typename TImage::Pointer image, std::vector<itk::Index<2> > listOfPixels,
+                                      itk::Index<2> queryPixel);
 
 template <typename TImage>
 unsigned int CountPixelsWithValue(typename TImage::Pointer image, typename TImage::PixelType pixel);
@@ -160,7 +177,22 @@ void CopyPatchIntoImage(typename TImage::Pointer sourceImage, typename TImage::P
 template <typename T>
 bool ContainsElement(std::vector<T> vec, T element);
 
+template <typename T>
+bool HasNeighborWithValue(typename T::Pointer image, itk::Index<2> pixel, typename T::PixelType value);
+
+template <typename T>
+unsigned int FindClosestIndexWithMaxGeoDistance(std::vector<itk::Index<2> > listOfPixels, itk::Index<2> queryPixel,
+                                                typename T::Pointer image, int maxDistance);
+
 } // end namespace
+
+struct IndexDistance
+{
+  unsigned int Index;
+  float Distance;
+};
+
+bool operator<(IndexDistance object1, IndexDistance object2);
 
 #include "Helpers.txx"
 

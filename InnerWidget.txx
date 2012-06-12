@@ -110,15 +110,17 @@ template <typename TImage>
 void InnerWidget<TImage>::ConnectSignalsAndSlots()
 {
   this->ScribbleInteractorStyle->StrokeUpdated.connect(boost::bind(&InnerWidget::StrokeUpdated, this, _1, _2));
+
   connect(&PropagateThread, SIGNAL(StartProgressSignal()), this, SLOT(StartProgressSlot()), Qt::QueuedConnection);
   connect(&PropagateThread, SIGNAL(StopProgressSignal()), this, SLOT(StopProgressSlot()), Qt::QueuedConnection);
-  connect(this->sldPatchRadius, SIGNAL(valueChanged(int)), this, SLOT(sldPatchRadius_valueChanged()));
+
   connect(this->chkScale, SIGNAL(clicked()), this, SLOT(chkScale_clicked()));
   connect(this->chkFlip, SIGNAL(clicked()), this, SLOT(chkFlip_clicked()));
   connect(this->chkShowPaths, SIGNAL(clicked()), this, SLOT(chkShowPaths_clicked()));
   connect(this->chkShowResult, SIGNAL(clicked()), this, SLOT(chkShowResult_clicked()));
   connect(this->chkShowOriginal, SIGNAL(clicked()), this, SLOT(chkShowOriginal_clicked()));
   connect(this->chkShowMask, SIGNAL(clicked()), this, SLOT(chkShowMask_clicked()));
+
   connect(this->btnSaveResult, SIGNAL(clicked()), this, SLOT(btnSaveResult_clicked()));
   connect(this->btnScreenshot, SIGNAL(clicked()), this, SLOT(btnScreenshot_clicked()));
 
@@ -178,11 +180,6 @@ void InnerWidget<TImage>::chkShowMask_clicked()
   std::cout << "Set mask visibility to " << this->chkShowMask->isChecked() << std::endl;
 }
 
-template <typename TImage>
-void InnerWidget<TImage>::sldPatchRadius_valueChanged()
-{
-  this->StructurePropagationFilter.SetPatchRadius(this->sldPatchRadius->value());
-}
 
 template <typename TImage>
 void InnerWidget<TImage>::chkScale_clicked()
@@ -381,11 +378,13 @@ void InnerWidget<TImage>::btnPropagate_clicked()
 
   this->StructurePropagationFilter.ClearEverything();
 
-  // Give the data to the structure propagation algorithm
+  this->StructurePropagationFilter.SetPatchRadius(this->scrPatchRadius->value());
+  this->StructurePropagationFilter.SetSourceLineWidth(this->scrSourceLineWidth->value());
   this->StructurePropagationFilter.SetMask(this->Mask);
-  //this->StructurePropagationFilter->SetPatchRadius(3);
   this->StructurePropagationFilter.SetPropagationLine(this->ColorPropagationLine);
+  this->StructurePropagationFilter.SetPropagationLineIntersections(this->PropagationLineIntersections);
 
+  // Perform the propagation in a separate thread
   this->PropagateThread.Propagation = &(this->StructurePropagationFilter);
   this->PropagateThread.start();
 }
@@ -560,6 +559,9 @@ void InnerWidget<TImage>::StrokeUpdated(vtkPolyData* path, bool closed)
 template<typename TImage>
 void InnerWidget<TImage>::UpdateColorPropagationLineFromStroke(vtkPolyData* polyDataPath)
 {
+  //std::cout << "Line size before update: " << this->ColorPropagationLine.size() << std::endl;
+  //std::cout << "Intersection size before update: " << this->PropagationLineIntersections.size() << std::endl;
+
   vtkSmartPointer<vtkAppendPolyData> appendFilter =
     vtkSmartPointer<vtkAppendPolyData>::New();
   appendFilter->AddInputConnection(this->ColorPropagationPathPolyData->GetProducerPort());
@@ -568,11 +570,21 @@ void InnerWidget<TImage>::UpdateColorPropagationLineFromStroke(vtkPolyData* poly
   this->ColorPropagationPathPolyData->ShallowCopy(appendFilter->GetOutput());
 
   std::vector<itk::Index<2> > path = Helpers::PolyDataToPixelList(polyDataPath);
+  typedef std::pair<std::set<itk::Index<2> >::iterator, bool> ReturnType;
+  for(unsigned int i = 0; i < path.size(); i++)
+    {
+    //std::cout << "path pixel " << i << " : " << path[i] << std::endl;
 
-  this->ColorPropagationLine.insert(this->ColorPropagationLine.end(), path.begin(), path.end()); // keep all of the strokes combined
-  std::cout << "UpdateColorPropagationLineFromStroke: There are " << this->ColorPropagationLine.size() << " pixels in the strokes." << std::endl;
+    ReturnType inserted = this->ColorPropagationLine.insert(path[i]);
+    if(inserted.second == false)
+      {
+      this->PropagationLineIntersections.insert(path[i]);
+      //std::cout << "UpdateColorPropagationLineFromStroke: Intersection at " << path[i] << std::endl;
+      }
+    }
 
-  //this->Refresh();
+  //std::cout << "Size after update: " << this->ColorPropagationLine.size() << std::endl;
+  std::cout << "Total intersections:: " << this->PropagationLineIntersections.size() << std::endl;
 }
 
 template<typename TImage>

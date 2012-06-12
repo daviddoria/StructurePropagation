@@ -169,3 +169,49 @@ void ClusterHalfNumberedPixels(IntScalarImageType::Pointer numberedPixels, IntSc
 
   std::cout << "Finished ClusterNumberedPixels!" << std::endl;
 }
+
+
+void GrowNumberedPixelClustersWithIntersections(IntScalarImageType::Pointer numberedPixels, IntScalarImageType::Pointer clusteredPixels,
+                                                unsigned int numberToSkip, std::vector<itk::Index<2> > intersections)
+{
+  std::cout << "Starting GrowNumberedPixelClustersWithIntersections..." << std::endl;
+
+  // Input: numberedPixels - an image where each valid pixel is an id >= 0
+  // Output: clusteredPixels - a modified version of numberedPixels where the regions of each id has grown
+  // Details: The function expand the region associated with each label
+
+  // Initialize by making the output the same as the input
+  DeepCopy<IntScalarImageType>(numberedPixels, clusteredPixels);
+
+  std::set<int> valuesSet = GetNonNegativeUniqueValues<IntScalarImageType>(clusteredPixels);
+  std::vector<unsigned int> valuesVector(valuesSet.begin(), valuesSet.end());
+
+  // Change labels ignoring intersections
+  for(unsigned int i = 0; i < valuesVector.size(); i++)
+    {
+    if(i % numberToSkip == 0)
+      {
+      continue; // don't blank the label of every 'numberToSkip' pixels
+      }
+    ChangeValue<IntScalarImageType>(clusteredPixels,valuesVector[i], -2); // mark pixels to be filled with -2
+    }
+
+  // Change labels of intersections back to the original labels
+  for(unsigned int i = 0; i < intersections.size(); i++)
+    {
+    clusteredPixels->SetPixel(intersections[i], numberedPixels->GetPixel(intersections[i]));
+    }
+
+  std::vector<itk::Index<2> > pixelsToFill = FindPixelsWithValue<IntScalarImageType>(clusteredPixels, -2);
+  std::vector<itk::Index<2> > validPixels = GetNonNegativePixels(clusteredPixels);
+
+  for(unsigned int currentPixelId = 0; currentPixelId < pixelsToFill.size(); currentPixelId++) // loop over line pixels
+    {
+    unsigned int closestIndexId = FindClosestIndex(validPixels, pixelsToFill[currentPixelId]);
+    clusteredPixels->SetPixel(pixelsToFill[currentPixelId], clusteredPixels->GetPixel(validPixels[closestIndexId]));
+    }
+
+  RelabelSequential(clusteredPixels);
+
+  std::cout << "Finished GrowNumberedPixelClustersWithIntersections!" << std::endl;
+}
