@@ -15,44 +15,49 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "Types.h"
-
+// ITK
 #include "itkImage.h"
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
 #include "itkImageRegionIterator.h"
+#include "itkVectorImage.h"
+
+// Submodules
+#include "Mask/Mask.h"
+#include "Mask/ITKHelpers/ITKHelpers.h"
+
+#include "StructurePropagation.h"
 
 int main(int argc, char* argv[])
 {
   if(argc != 4)
     {
-    std::cerr << "Required: image mask tileRadius" << std::endl;
+    std::cerr << "Required: image mask patchRadius" << std::endl;
     exit(-1);
     }
 
-  typedef itk::ImageFileReader<ColorImageType> ImageReaderType;
-  typedef itk::ImageFileReader<MaskImageType> MaskReaderType;
-
-  std::string imageFilename = argv[1];
-  std::cout << "Reading " << imageFilename << std::endl;
-
-  ImageReaderType::Pointer imageReader = ImageReaderType::New();
-  imageReader->SetFileName(imageFilename);
-  imageReader->Update();
-
-  std::string maskFilename = argv[2];
-  std::cout << "Reading " << maskFilename << std::endl;
-
-  std::string strRadius = argv[3];
   std::stringstream ss;
-  ss << strRadius;
-  int radius;
-  ss >> radius;
+  for(unsigned int i = 1; i < argc; ++i)
+  {
+    ss << argv[i] << " ";
+  }
+  std::string imageFilename;
+  std::string maskFilename;
+  unsigned int patchRadius;
 
-  MaskReaderType::Pointer maskReader = MaskReaderType::New();
-  maskReader->SetFileName(maskFilename);
-  maskReader->Update();
+  ss >> imageFilename >> maskFilename >> patchRadius;
 
+  std::cout << "Image: " << imageFilename << std::endl;
+  std::cout << "Mask: " << maskFilename << std::endl;
+  std::cout << "Patch radius: " << patchRadius << std::endl;
+
+  ITKHelpersTypes::UnsignedCharVectorImageType::Pointer image = ITKHelpersTypes::UnsignedCharVectorImageType::New();
+  ITKHelpers::ReadImage(image.GetPointer(), imageFilename);
+
+  Mask::Pointer mask = Mask::New();
+  mask->Read(maskFilename);
+
+  StructurePropagation structurePropagation;
   return EXIT_SUCCESS;
 }
 

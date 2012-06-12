@@ -20,11 +20,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef StructurePropagation_H
 #define StructurePropagation_H
 
-// Custom
-#include "StructurePropagation.h"
-#include "Types.h"
-#include "IndexComparison.h"
-
 // OpenGM
 #include <opengm/explicitfactor.hxx>
 #include <opengm/graphicalmodel.hxx>
