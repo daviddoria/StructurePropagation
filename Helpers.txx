@@ -99,13 +99,11 @@ template <typename TImageType>
 void ITKImageToVTKImage(typename TImageType::Pointer image, vtkSmartPointer<vtkImageData> outputImage)
 {
   // Setup and allocate the image data
-  outputImage->SetNumberOfScalarComponents(TImageType::PixelType::GetNumberOfComponents());
-  outputImage->SetScalarTypeToUnsignedChar();
   outputImage->SetDimensions(image->GetLargestPossibleRegion().GetSize()[0],
                              image->GetLargestPossibleRegion().GetSize()[1],
                              1);
 
-  outputImage->AllocateScalars();
+  outputImage->AllocateScalars(VTK_UNSIGNED_CHAR, TImageType::PixelType::GetNumberOfComponents());
 
   // Copy all of the input image pixels to the output image
   itk::ImageRegionConstIteratorWithIndex<TImageType> imageIterator(image,image->GetLargestPossibleRegion());

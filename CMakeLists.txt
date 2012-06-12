@@ -8,7 +8,7 @@ INCLUDE(${QT_USE_FILE})
 QT4_WRAP_UI(UISrcs MainWindow.ui InnerWidget.ui)
 QT4_WRAP_CPP(MOCSrcs MainWindow.h InnerWidgetObject.h ComputationThread.h)
 
-include_directories(${include_directories} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DQT_NO_KEYWORDS")
 
@@ -26,9 +26,9 @@ FILE(GLOB OpenGM_Headers ${OpenGM_IncludePath}/opengm/* ${OpenGM_IncludePath}/op
 ADD_EXECUTABLE(StructurePropagation main.cpp MainWindow.cpp InnerWidgetObject.cpp
 vtkScribbleInteractorStyle.cxx Helpers.cpp
 ${MOCSrcs} ${UISrcs})
-TARGET_LINK_LIBRARIES(StructurePropagation vtkHybrid vtkWidgets
-QVTK ${QT_LIBRARIES}
-ITKCommon ITKIO
+TARGET_LINK_LIBRARIES(StructurePropagation ${VTK_LIBRARIES}
+${QT_LIBRARIES}
+${ITK_LIBRARIES}
 )
 
 # ADD_EXECUTABLE(NonInteractive NonInteractive.cpp

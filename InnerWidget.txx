@@ -96,7 +96,7 @@ InnerWidget<TImage>::InnerWidget(QWidget *parent)
 
   this->ColorPropagationPathPolyData = vtkSmartPointer<vtkPolyData>::New();
   this->ColorPropagationPathMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
-  this->ColorPropagationPathMapper->SetInputConnection(this->ColorPropagationPathPolyData->GetProducerPort());
+  this->ColorPropagationPathMapper->SetInputData(this->ColorPropagationPathPolyData);
   this->ColorPropagationPathActor = vtkSmartPointer<vtkActor>::New();
   this->ColorPropagationPathActor->SetMapper(this->ColorPropagationPathMapper);
   this->ColorPropagationPathActor->GetProperty()->SetLineWidth(4);
@@ -144,7 +144,7 @@ void InnerWidget<TImage>::btnScreenshot_clicked()
   vtkSmartPointer<vtkPNGWriter> writer =
     vtkSmartPointer<vtkPNGWriter>::New();
   writer->SetFileName("screenshot.png");
-  writer->SetInput(windowToImageFilter->GetOutput());
+  writer->SetInputData(windowToImageFilter->GetOutput());
   writer->Write();
 }
 
@@ -280,7 +280,7 @@ void InnerWidget<TImage>::DisplayTransparencyMaskedImage(typename TImage::Pointe
   this->ResultActor->SetInput(transparencyMaskedImage);
   */
 
-  this->ResultActor->SetInput(VTKImage);
+  this->ResultActor->SetInputData(VTKImage);
 
   this->Renderer->AddActor(this->ResultActor);
   this->Refresh();
@@ -313,10 +313,10 @@ void InnerWidget<TImage>::LoadMask(std::string filename)
   vtkSmartPointer<vtkImageMapToColors> mapTransparency =
     vtkSmartPointer<vtkImageMapToColors>::New();
   mapTransparency->SetLookupTable(lookupTable);
-  mapTransparency->SetInput(VTKMaskImage);
+  mapTransparency->SetInputData(VTKMaskImage);
   mapTransparency->PassAlphaToOutputOn();
 
-  this->MaskImageActor->SetInput(mapTransparency->GetOutput());
+  this->MaskImageActor->SetInputData(mapTransparency->GetOutput());
 
   //this->qvtkWidget->GetInteractor()->GetRenderWindow()->GetRenderers()->GetFirstRenderer()->AddActor(this->MaskImageActor);
 
@@ -447,7 +447,7 @@ void InnerWidget<TImage>::OpenFile()
     vtkSmartPointer<vtkImageData> VTKImage =
       vtkSmartPointer<vtkImageData>::New();
     Helpers::ITKImageToVTKImage<TImage>(reader->GetOutput(), VTKImage);
-    this->OriginalImageActor->SetInput(VTKImage);
+    this->OriginalImageActor->SetInputData(VTKImage);
     }
 
   this->StructurePropagationFilter.SetImage(reader->GetOutput());
@@ -529,12 +529,10 @@ void InnerWidget<TImage>::Refresh()
 template<typename TImage>
 void InnerWidget<TImage>::CreateScribbleCanvas()
 {
-  this->ScribbleCanvas->SetNumberOfScalarComponents(4);
-  this->ScribbleCanvas->SetScalarTypeToUnsignedChar();
   int dims[3];
   this->OriginalImageActor->GetInput()->GetDimensions(dims);
   this->ScribbleCanvas->SetDimensions(dims);
-  this->ScribbleCanvas->AllocateScalars();
+  this->ScribbleCanvas->AllocateScalars(VTK_UNSIGNED_CHAR, 4);
 
   for (int y = 0; y < dims[1]; y++)
     {
@@ -545,7 +543,7 @@ void InnerWidget<TImage>::CreateScribbleCanvas()
       }
     }
 
-  this->ScribbleCanvasActor->SetInput(this->ScribbleCanvas);
+  this->ScribbleCanvasActor->SetInputData(this->ScribbleCanvas);
 
   //this->ScribbleInteractorStyle->InitializeTracer(this->ScribbleCanvasActor);
 }
@@ -564,8 +562,8 @@ void InnerWidget<TImage>::UpdateColorPropagationLineFromStroke(vtkPolyData* poly
 
   vtkSmartPointer<vtkAppendPolyData> appendFilter =
     vtkSmartPointer<vtkAppendPolyData>::New();
-  appendFilter->AddInputConnection(this->ColorPropagationPathPolyData->GetProducerPort());
-  appendFilter->AddInputConnection(polyDataPath->GetProducerPort());
+  appendFilter->AddInputData(this->ColorPropagationPathPolyData);
+  appendFilter->AddInputData(polyDataPath);
   appendFilter->Update();
   this->ColorPropagationPathPolyData->ShallowCopy(appendFilter->GetOutput());
 
@@ -597,7 +595,7 @@ void InnerWidget<TImage>::UpdateMaskFromStroke(vtkPolyData* path, bool closed)
   vtkSmartPointer<vtkPolyDataToImageStencil> polyDataToImageStencil =
     vtkSmartPointer<vtkPolyDataToImageStencil>::New();
   polyDataToImageStencil->SetTolerance(0);
-  polyDataToImageStencil->SetInputConnection(path->GetProducerPort());
+  polyDataToImageStencil->SetInputData(path);
   polyDataToImageStencil->SetOutputOrigin(image->GetOrigin());
   polyDataToImageStencil->SetOutputSpacing(image->GetSpacing());
   polyDataToImageStencil->SetOutputWholeExtent(image->GetExtent());

@@ -257,8 +257,7 @@ void MaskImage(vtkSmartPointer<vtkImageData> VTKImage, vtkSmartPointer<vtkImageD
   int* dims = VTKImage->GetDimensions();
 
   VTKMaskedImage->SetDimensions(dims);
-  VTKMaskedImage->SetNumberOfScalarComponents(4);
-  VTKMaskedImage->SetScalarTypeToUnsignedChar();
+  VTKMaskedImage->AllocateScalars(VTK_UNSIGNED_CHAR, 4); // we might not have wanted to allocate here
 
   // int dims[3]; // can't do this
   for (int y = 0; y < dims[1]; y++)
@@ -302,13 +301,12 @@ template <>
 void ITKImageToVTKImage<UnsignedCharScalarImageType>(UnsignedCharScalarImageType::Pointer image, vtkSmartPointer<vtkImageData> outputImage)
 {
   // Setup and allocate the image data
-  outputImage->SetNumberOfScalarComponents(1);
-  outputImage->SetScalarTypeToUnsignedChar();
+
   outputImage->SetDimensions(image->GetLargestPossibleRegion().GetSize()[0],
                              image->GetLargestPossibleRegion().GetSize()[1],
                              1);
 
-  outputImage->AllocateScalars();
+  outputImage->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
 
   // Copy all of the input image pixels to the output image
   itk::ImageRegionConstIteratorWithIndex<MaskImageType> imageIterator(image,image->GetLargestPossibleRegion());
@@ -329,9 +327,7 @@ void ApplyTransparencyMask(vtkImageData* image, UnsignedCharScalarImageType::Poi
   image->GetDimensions(dims);
 
   maskedImage->SetDimensions(dims);
-  maskedImage->SetNumberOfScalarComponents(4);
-  maskedImage->SetScalarTypeToUnsignedChar();
-  maskedImage->AllocateScalars();
+  maskedImage->AllocateScalars(VTK_UNSIGNED_CHAR, 4);
 
   for(unsigned int i = 0; i < static_cast<unsigned int>(dims[0]); i++)
     {

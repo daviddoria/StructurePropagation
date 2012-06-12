@@ -55,7 +55,7 @@ void vtkScribbleInteractorStyle::InitializeTracer(vtkImageActor* imageActor)
   this->Tracer->SetInteractor(this->Interactor);
   this->Tracer->SetViewProp(imageActor);
   this->Tracer->ProjectToPlaneOn();
-  this->Tracer->SetInput(imageActor->GetInput());
+  this->Tracer->SetInputData(imageActor->GetInput());
   this->Tracer->SnapToImageOn();
   this->Tracer->On();
 }
