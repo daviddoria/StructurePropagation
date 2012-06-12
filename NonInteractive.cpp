@@ -57,7 +57,8 @@ int main(int argc, char* argv[])
   Mask::Pointer mask = Mask::New();
   mask->Read(maskFilename);
 
-  StructurePropagation structurePropagation;
+  StructurePropagation<ITKHelpersTypes::UnsignedCharVectorImageType> structurePropagation;
+
   return EXIT_SUCCESS;
 }
 

@@ -15,6 +15,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#ifndef StructurePropagation_HPP
+#define StructurePropagation_HPP
+
 // ITK
 #include "itkBinaryNotImageFilter.h"
 #include "itkCastImageFilter.h"
@@ -27,48 +30,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "itkRegionOfInterestImageFilter.h"
 
 // Custom
-#include "Helpers.h"
-
-// OpenGM
-#include <opengm/inference/treereweightedbeliefpropagation.hxx>
-#include <opengm/inference/beliefpropagation.hxx>
-
-
-template<class BP>
-class BeliefPropagationProtocolVisitor {
-public:
-  typedef BP bp_type;
-  typedef typename bp_type::value_type value_type;
-
-  BeliefPropagationProtocolVisitor() : iteration(0){}
-
-  void operator()(const bp_type& bp)
-  {
-    std::vector<size_t> state;
-    bp.arg(state);
-
-    value_type value = bp.graphicalModel().evaluate(state);
-
-    value_type distance = bp.convergence();
-
-    std::cout << "iteration " << iteration
-        << ": energy=" <<  value
-        << ", distance=" << distance
-        << std::endl;
-    iteration++;
-  }
-
-private:
-  unsigned int iteration;
-
-};
+#include "DynamicProgramming/Helpers/Helpers.h"
 
 template <typename TImage>
 StructurePropagation<TImage>::StructurePropagation()
 {
   // Initializations
   this->Image = TImage::New();
-  this->Mask = UnsignedCharScalarImageType::New();
+  this->Mask = Mask::New();
   this->PropagationLineImage = UnsignedCharScalarImageType::New();
   this->PropagationLineSourceImage = UnsignedCharScalarImageType::New();
   this->PropagationLineTargetImage = UnsignedCharScalarImageType::New();
@@ -674,3 +643,5 @@ void StructurePropagation<TImage>::WriteEdges()
 
   Helpers::WriteImage<UnsignedCharScalarImageType>(edgeImage, "EdgeImage.png");
 }
+
+#endif
