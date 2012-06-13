@@ -51,13 +51,14 @@ int main(int argc, char* argv[])
   std::cout << "Mask: " << maskFilename << std::endl;
   std::cout << "Patch radius: " << patchRadius << std::endl;
 
-  ITKHelpersTypes::UnsignedCharVectorImageType::Pointer image = ITKHelpersTypes::UnsignedCharVectorImageType::New();
-  ITKHelpers::ReadImage(image.GetPointer(), imageFilename);
+  typedef ITKHelpersTypes::UnsignedCharVectorImageType ImageType;
+  ImageType::Pointer image = ImageType::New();
+  ITKHelpers::ReadImage(imageFilename, image.GetPointer());
 
   Mask::Pointer mask = Mask::New();
   mask->Read(maskFilename);
 
-  StructurePropagation<ITKHelpersTypes::UnsignedCharVectorImageType> structurePropagation;
+  StructurePropagation<ImageType> structurePropagation;
 
   return EXIT_SUCCESS;
 }

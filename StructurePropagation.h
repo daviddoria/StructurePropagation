@@ -24,74 +24,76 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "DynamicProgramming/DynamicProgramming.h"
 #include "Mask/Mask.h"
 
-template <typename TImageType>
+template <typename TImage>
 class StructurePropagation
 {
 public:
+  /** Constructor */
   StructurePropagation();
 
-  // Functions
+  /** Actually perform the structure propagation */
   void PropagateStructure();
+
+  /** Clear everything. */
   void ClearEverything();
 
-  // Main functions
-  void ComputePatchRegions(); // This function simply calls ComputeSourcePatchRegions and ComputeTargetPatchRegions
+  /** This function simply calls ComputeSourcePatchRegions and ComputeTargetPatchRegions */
+  void ComputePatchRegions();
+
+  /** Compute the source/label regions from the propagation line image. */
   void ComputeSourcePatchRegions();
+
+  /** Compute the target/node regions from the propagation line image. */
   void ComputeTargetPatchRegions();
 
-  // Mutators
+  /** Set the mask to indicate the hole region */
   void SetMask(Mask* mask);
-  //void SetPropagationLine(std::vector<itk::Index<2> > propagationLine);
-  void SetPropagationLine(std::set<itk::Index<2>, IndexComparison > propagationLine);
-  void SetPropagationLineIntersections(std::set<itk::Index<2>, IndexComparison > intersections);
-  void SetPatchRadius(unsigned int radius);
-  void SetSourceLineWidth(unsigned int width);
-  void SetImage(typename TImageType::Pointer image);
 
-  // Accessors
+  /** Set the radius of the patches to use. */
+  void SetPatchRadius(const unsigned int radius);
+
+  /** Set the image on which to operate. */
+  void SetImage(TImage* const image);
+
+  /** Get the regions considered as labels/source patches. */
   std::vector<itk::ImageRegion<2> > GetSourcePatchRegions();
+
+  /** Get the regions considered as nodes/target patches. */
   std::vector<itk::ImageRegion<2> > GetTargetPatchRegions();
-  typename TImageType* GetOutputImage();
+
+  /** Get the output of the algorithm (the inpainted image) */
+  TImage* GetOutputImage();
+
+  typedef ITKHelpersTypes::UnsignedCharScalarImageType PropagationLineImageType;
+  
+  /** Set the image where non-zero values indicate the propagation line drawn by the user. */
+  void SetPropagationLineImage(PropagationLineImageType* const propagationLineImage);
 
 private:
 
-  // Cost functions
-  double UnaryCost(const int node, const int label);
+  typedef std::set<itk::Index<2>, itk::Index<2>::LexicographicCompare > IndexSetType;
+  
+  /** The input image */
+  typename TImage::Pointer Image;
 
-  double CompletionCost(const int node, const int label);
-  double BinaryCost(const int node1, const int node2, const int label1, const int label2);
+  /** The output image */
+  typename TImage::Pointer OutputImage;
 
-  // The input and output images
-  typename TImageType::Pointer Image;
-  typename TImageType::Pointer OutputImage;
+  /** The image where non-zero values indicate the propagation line drawn by the user. */
+  PropagationLineImageType::Pointer PropagationLineImage;
 
-  // This function extracts the patches of the line so they can be used in the StructureCost computation
-  void ExtractRegionsOfPropagationPath();
-  std::vector<UnsignedCharScalarImageType::Pointer> TargetStrokePaths;
-  std::vector<UnsignedCharScalarImageType::Pointer> SourceStrokePaths;
+  /** The mask indicating the hole in the image. */
+  Mask::Pointer MaskImage;
 
-  // Data
-  UnsignedCharScalarImageType::Pointer Mask;
+  /** The radius of the patches to use. */
   unsigned int PatchRadius;
-  std::set<itk::Index<2>, IndexComparison > PropagationLine;
-  std::set<itk::Index<2>, IndexComparison > PropagationLineIntersections;
 
-  // Images of the propagation path.
-  void CreateLineImages();
-  UnsignedCharScalarImageType::Pointer PropagationLineImage;
-  UnsignedCharScalarImageType::Pointer PropagationLineTargetImage;
-  UnsignedCharScalarImageType::Pointer PropagationLineSourceImage;
-
-  // The regions of the image corresponding to source and target patches.
+  /** The regions of the image corresponding to source/label patches. */
   std::vector<itk::ImageRegion<2> > SourcePatchRegions;
+
+  /** The regions of the image corresponding to target/node patches. */
   std::vector<itk::ImageRegion<2> > TargetPatchRegions;
 
-  // These indices are the center of the patch associated with each node.
-  // These indices correspond to those of TargetPatchRegions.
-  std::vector<itk::Index<2> > NodeLocations;
-
-  void WriteTargetPatches();
-  void WriteSourcePatches();
 };
 
 #include "StructurePropagation.hpp"
