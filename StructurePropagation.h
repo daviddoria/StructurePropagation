@@ -27,6 +27,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 template <typename TImage>
 class StructurePropagation
 {
+private:
+
+  /** The type of the propagation line image. */
+  typedef ITKHelpersTypes::UnsignedCharScalarImageType PropagationLineImageType;
+
+  /** The type of the index set. */
+  typedef std::set<itk::Index<2>, itk::Index<2>::LexicographicCompare > IndexSetType;
+
 public:
   /** Constructor */
   StructurePropagation();
@@ -41,10 +49,10 @@ public:
   void ComputePatchRegions();
 
   /** Compute the source/label regions from the propagation line image. */
-  void ComputeSourcePatchRegions();
+  void ComputeSourcePatchRegions(const PropagationLineImageType* const propagationLineOutsideMask);
 
   /** Compute the target/node regions from the propagation line image. */
-  void ComputeTargetPatchRegions();
+  void ComputeTargetPatchRegions(const PropagationLineImageType* const propagationLineInsideMask);
 
   /** Set the mask to indicate the hole region */
   void SetMask(Mask* mask);
@@ -64,15 +72,11 @@ public:
   /** Get the output of the algorithm (the inpainted image) */
   TImage* GetOutputImage();
 
-  typedef ITKHelpersTypes::UnsignedCharScalarImageType PropagationLineImageType;
-  
   /** Set the image where non-zero values indicate the propagation line drawn by the user. */
   void SetPropagationLineImage(PropagationLineImageType* const propagationLineImage);
 
 private:
 
-  typedef std::set<itk::Index<2>, itk::Index<2>::LexicographicCompare > IndexSetType;
-  
   /** The input image */
   typename TImage::Pointer Image;
 

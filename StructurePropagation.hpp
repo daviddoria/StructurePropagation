@@ -18,6 +18,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef StructurePropagation_HPP
 #define StructurePropagation_HPP
 
+#include "StructurePropagation.h"
+
 // ITK
 #include "itkBinaryNotImageFilter.h"
 #include "itkCastImageFilter.h"
@@ -28,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "itkMaskImageFilter.h"
 #include "itkPasteImageFilter.h"
 #include "itkRegionOfInterestImageFilter.h"
+#include "itkXorImageFilter.h"
 
 // Submodules
 #include "DynamicProgramming/Helpers/Helpers.h"
@@ -118,7 +121,7 @@ void StructurePropagation<TImage>::SetPatchRadius(unsigned int radius)
 }
 
 template <typename TImage>
-void StructurePropagation<TImage>::ComputeSourcePatchRegions()
+void StructurePropagation<TImage>::ComputeSourcePatchRegions(const PropagationLineImageType* const propagationLineOutsideMask)
 {
   // Start fresh
   this->SourcePatchRegions.clear();
@@ -134,7 +137,7 @@ void StructurePropagation<TImage>::ComputeSourcePatchRegions()
 }
 
 template <typename TImage>
-void StructurePropagation<TImage>::ComputeTargetPatchRegions()
+void StructurePropagation<TImage>::ComputeTargetPatchRegions(const PropagationLineImageType* const propagationLineInsideMask)
 {
   // Start fresh
   this->TargetPatchRegions.clear();
@@ -170,41 +173,30 @@ std::vector<itk::ImageRegion<2> > StructurePropagation<TImage>::GetTargetPatchRe
 template <typename TImage>
 void StructurePropagation<TImage>::ComputePatchRegions()
 {
-  ITKHelpers::IndicesToBinaryImage(this->PropagationLine, this->Mask->GetLargestPossibleRegion(),
-                                   this->PropagationLineImage);
+  // Extract the part of the lines in the source region
+  PropagationLineImageType::Pointer propagationLineOutsideMask = PropagationLineImageType::New();
+  ITKHelpers::DeepCopy(this->PropagationLineImage.GetPointer(), propagationLineOutsideMask.GetPointer());
+  this->MaskImage->ApplyToImage(propagationLineOutsideMask, 0);
+
+  ITKHelpers::WriteImage(propagationLineOutsideMask.GetPointer(), "propagationLineOutsideMask.png");
 
   // Extract the part of the lines in the target region
-  typedef itk::MaskImageFilter<PropagationLineImageType, PropagationLineImageType> MaskFilterType;
-  MaskFilterType::Pointer targetMaskFilter = MaskFilterType::New();
-  targetMaskFilter->SetInput(this->PropagationLineImage);
-  targetMaskFilter->SetMaskImage(this->Mask);
-  targetMaskFilter->Update();
-  this->PropagationLineTargetImage->Graft(targetMaskFilter->GetOutput());
+  PropagationLineImageType::Pointer propagationLineInsideMask = PropagationLineImageType::New();
+  ITKHelpers::DeepCopy(this->PropagationLineImage.GetPointer(), propagationLineInsideMask.GetPointer());
+  typedef itk::XorImageFilter<PropagationLineImageType> XORFilterType;
+  XORFilterType::Pointer xorFilter = XORFilterType::New();
+  xorFilter->SetInput1(propagationLineOutsideMask);
+  xorFilter->SetInput1(this->PropagationLineImage);
+  xorFilter->Update();
 
-  ITKHelpers::WriteImage(this->PropagationLineTargetImage, "TargetLine.png");
+  ITKHelpers::WriteImage(propagationLineInsideMask.GetPointer(), "propagationLineInsideMask.png");
 
-  // Extract the part of the lines in the source region
-  // Invert the mask
-  typedef itk::BinaryNotImageFilter<PropagationLineImageType> BinaryNotImageFilterType;
-
-  BinaryNotImageFilterType::Pointer binaryNotFilter = BinaryNotImageFilterType::New();
-  binaryNotFilter->SetInput(this->Mask);
-  binaryNotFilter->Update();
-
-  MaskFilterType::Pointer sourceMaskFilter = MaskFilterType::New();
-  sourceMaskFilter->SetInput(this->PropagationLineImage);
-  sourceMaskFilter->SetMaskImage(binaryNotFilter->GetOutput());
-  sourceMaskFilter->Update();
-  ITKHelpers::DeepCopy(sourceMaskFilter->GetOutput(), this->PropagationLineSourceImage);
-
-  ITKHelpers::WriteImage(this->PropagationLineSourceImage.GetPointer(), "SourceLine.png");
-
-  this->ComputeSourcePatchRegions();
-  this->ComputeTargetPatchRegions();
+  this->ComputeSourcePatchRegions(propagationLineOutsideMask);
+  this->ComputeTargetPatchRegions(propagationLineInsideMask);
 }
 
 template <typename TImage>
-void StructurePropagation<TImage>::SetPropagationLineImage(ITKHelpersTypes::UnsignedCharScalarImageType*
+void StructurePropagation<TImage>::SetPropagationLineImage(PropagationLineImageType*
                                                            const propagationLineImage)
 {
   ITKHelpers::DeepCopy(propagationLineImage, this->PropagationLineImage.GetPointer());
