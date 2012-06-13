@@ -42,8 +42,11 @@ public:
     * on the corrsponding parts of the line. */
   void ComputeRegionsPropagationThroughHole();
 
-  /** This function computes the source region in a dilated ring around the hole, and the target regions along the hole boundary. */
+  /** This function computes the source region as the boundary of a dilated mask and the target regions along the hole boundary. */
   void ComputeRegionsPropagationAroundHole();
+
+  /** This function computes the source region in a dilated ring around the hole, and the target regions along the hole boundary. */
+  void ComputeDonutRegionsPropagationAroundHole();
 
   /** Set the regions considered as labels/source patches. */
   void SetSourceRegions(const std::vector<itk::ImageRegion<2> >& sourceRegions);

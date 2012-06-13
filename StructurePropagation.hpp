@@ -82,6 +82,7 @@ void StructurePropagation<TImage>::SetTargetRegions(const std::vector<itk::Image
 template <typename TImage>
 void StructurePropagation<TImage>::PropagateStructure()
 {
+  std::cout << "StructurePropagation: PropagateStructure()" << std::endl;
   std::cout << "There are " << this->SourceRegions.size() << " source patch regions (labels)." << std::endl;
   std::cout << "There are " << this->TargetRegions.size() << " target patch regions (nodes)." << std::endl;
 
@@ -254,7 +255,7 @@ std::vector<itk::ImageRegion<2> > StructurePropagation<TImage>::GetTargetPatchRe
 }
 
 template <typename TImage>
-void StructurePropagation<TImage>::ComputeRegionsPropagationAroundHole()
+void StructurePropagation<TImage>::ComputeDonutRegionsPropagationAroundHole()
 {
   Mask::BoundaryImageType::Pointer boundaryImage = Mask::BoundaryImageType::New();
   this->MaskImage->FindBoundary(boundaryImage, Mask::VALID);
@@ -283,6 +284,29 @@ void StructurePropagation<TImage>::ComputeRegionsPropagationAroundHole()
   ITKHelpers::WriteImage(donutImage.GetPointer(), "donut.png");
 
   this->ComputeSourceRegions(donutImage);
+}
+
+
+template <typename TImage>
+void StructurePropagation<TImage>::ComputeRegionsPropagationAroundHole()
+{
+  // Computing a donut of source regions produces way too many source regions. Instead, just keep the outer ring of pixels
+  // around the donut.
+  Mask::BoundaryImageType::Pointer boundaryImage = Mask::BoundaryImageType::New();
+  this->MaskImage->FindBoundary(boundaryImage, Mask::VALID);
+  ComputeTargetRegionsClosedContour(boundaryImage);
+
+  Mask::Pointer expandedMask = Mask::New();
+  expandedMask->DeepCopyFrom(this->MaskImage);
+  unsigned int expandFactor = 1;
+  expandedMask->ExpandHole(this->PatchRadius * expandFactor);
+
+  Mask::BoundaryImageType::Pointer expandedBoundaryImage = Mask::BoundaryImageType::New();
+  expandedMask->FindBoundary(expandedBoundaryImage, Mask::VALID);
+
+  ITKHelpers::WriteImage(expandedBoundaryImage.GetPointer(), "expandedBoundaryImage.png");
+
+  this->ComputeSourceRegions(expandedBoundaryImage);
 }
 
 template <typename TImage>
