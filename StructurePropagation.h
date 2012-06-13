@@ -27,15 +27,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 template <typename TImage>
 class StructurePropagation
 {
-private:
-
+public:
   /** The type of the propagation line image. */
   typedef ITKHelpersTypes::UnsignedCharScalarImageType PropagationLineImageType;
 
-  /** The type of the index set. */
-  typedef std::set<itk::Index<2>, itk::Index<2>::LexicographicCompare > IndexSetType;
-
-public:
   /** Constructor */
   StructurePropagation();
 

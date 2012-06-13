@@ -1,98 +1,137 @@
 #ifndef StructurePropagationDynamicProgramming_hpp
 #define StructurePropagationDynamicProgramming_hpp
 
+// Appease syntax parser
 #include "StructurePropagationDynamicProgramming.h"
 
+// Submodules
 #include "Mask/ITKHelpers/ITKHelpers.h"
 
-void StructurePropagationDynamicProgramming::SetImage(ImageType* const image)
+// ITK
+#include "itkImageRegionConstIterator.h"
+#include "itkImageRegionConstIteratorWithIndex.h"
+
+template <typename TImage>
+StructurePropagationDynamicProgramming<TImage>::StructurePropagationDynamicProgramming()
 {
-  ITKHelpers::DeepCopy(image, this->Image.GetPointer());
+  this->Image = NULL;
+  this->MaskImage = NULL;
 }
 
-float StructurePropagationDynamicProgramming::BinaryEnergy(const LabelType& labelA, const unsigned int nodeA,
-                                           const LabelType& labelB, const unsigned int nodeB)
+template <typename TImage>
+void StructurePropagationDynamicProgramming<TImage>::SetImage(TImage* const image)
 {
-  itk::ImageRegion<2> targetRegion1 = this->TargetPatchRegions[node1];
-  itk::ImageRegion<2> targetRegion2 = this->TargetPatchRegions[node2];
+  //ITKHelpers::DeepCopy(image, this->Image.GetPointer());
+  this->Image = image;
+}
 
-  itk::ImageRegion<2> sourceRegion1 = this->SourcePatchRegions[label1];
-  itk::ImageRegion<2> sourceRegion2 = this->SourcePatchRegions[label2];
+template <typename TImage>
+void StructurePropagationDynamicProgramming<TImage>::SetMask(Mask* const mask)
+{
+  //this->MaskImage->DeepCopyFrom(mask);
+  this->MaskImage = mask;
+}
+
+template <typename TImage>
+float StructurePropagationDynamicProgramming<TImage>::BinaryEnergy(const LabelType& labelA, const NodeType& nodeA,
+                                                                   const LabelType& labelB, const NodeType& nodeB)
+{
+  // This function assumes that both label regions are entirely valid
+//   assert(this->Image->GetLargestPossibleRegion().GetSize()[0] != 0);
+//   assert(this->MaskImage->GetLargestPossibleRegion().GetSize()[0] != 0);
+  assert(this->Image);
+  assert(this->MaskImage);
+  assert(this->MaskImage->IsValid(labelA));
+  assert(this->MaskImage->IsValid(labelB));
 
   // Find the overlapping region
-  itk::ImageRegion<2> overlap = targetRegion1;
-  overlap.Crop(targetRegion2);
+  itk::ImageRegion<2> overlap = nodeA;
+  overlap.Crop(nodeB);
 
-  // Find the offset of the corner of the overlap region from each of the patches
-  itk::Offset<2> offset1 = overlap.GetIndex() - targetRegion1.GetIndex();
-  itk::Offset<2> offset2 = overlap.GetIndex() - targetRegion2.GetIndex();
+  if(overlap.GetNumberOfPixels() == 0)
+  {
+    return 0.0f;
+  }
 
-  itk::ImageRegion<2> overlapRegion1(sourceRegion1.GetIndex() + offset1, overlap.GetSize());
-  itk::ImageRegion<2> overlapRegion2(sourceRegion2.GetIndex() + offset2, overlap.GetSize());
+  // Find the offset of the corner of the overlap region from each of the node regions
+  itk::Offset<2> nodeA_offset = overlap.GetIndex() - nodeA.GetIndex();
+  itk::Offset<2> nodeB_offset = overlap.GetIndex() - nodeB.GetIndex();
 
-  // sum of the normalized squared differences in the region where the two patches overlap
-  itk::ImageRegionConstIterator<TImage> patch1Iterator(this->Image, overlapRegion1);
-  itk::ImageRegionConstIterator<TImage> patch2Iterator(this->Image, overlapRegion2);
+  // Get the corresponding regions in the label regions
+  itk::ImageRegion<2> labelA_OverlapRegion(labelA.GetIndex() + nodeA_offset, overlap.GetSize());
+  itk::ImageRegion<2> labelB_OverlapRegion(labelB.GetIndex() + nodeB_offset, overlap.GetSize());
 
-  double ssd = 0; // sum of squared differences
-  while(!patch1Iterator.IsAtEnd())
+  // sum of the squared differences in the region where the two patches overlap
+  itk::ImageRegionConstIterator<TImage> nodeAIterator(this->Image, labelA_OverlapRegion);
+  itk::ImageRegionConstIterator<TImage> nodeBIterator(this->Image, labelB_OverlapRegion);
+
+  float ssd = 0.0f; // sum of squared differences
+  while(!nodeAIterator.IsAtEnd())
     {
     // Get the value of the current pixel
-    typename TImage::PixelType pixel1 = patch1Iterator.Get();
-    typename TImage::PixelType pixel2 = patch2Iterator.Get();
-    ssd += Helpers::SquaredDifference(pixel1, pixel2);
-
-    ++patch1Iterator;
-    ++patch2Iterator;
-    }
-
-  /*
-  std::cout << "Binary cost for nodes " << node1 << " and " << node2
-            << " with labels " << label1 << " and " << label2 << " is " << ssd << std::endl;
-  */
-
-  if(ssd <= 0)
+    typename TImage::PixelType pixelA = nodeAIterator.Get();
+    typename TImage::PixelType pixelB = nodeBIterator.Get();
+    for(unsigned int i = 0; i < pixelA.GetSize(); ++i)
     {
-    return 0.0;
+      ssd += (pixelA[i] - pixelB[i]) * (pixelA[i] - pixelB[i]);
     }
-  else
-    {
-    return ssd/static_cast<double>(overlapRegion1.GetNumberOfPixels());
+
+    ++nodeAIterator;
+    ++nodeBIterator;
     }
+
+  return ssd/static_cast<float>(overlap.GetNumberOfPixels());
 }
 
-float StructurePropagationDynamicProgramming::UnaryEnergy(const LabelType& label, const unsigned int node)
+template <typename TImage>
+float StructurePropagationDynamicProgramming<TImage>::UnaryEnergy(const LabelType& label, const NodeType& node)
 {
-  // "sum of the normalized squared differences in the region of the patch which overlaps the source region"
-  itk::ImageRegionConstIterator<TImage> imageIterator(this->Image, this->TargetPatchRegions[node]);
-  itk::ImageRegionConstIterator<UnsignedCharScalarImageType> maskIterator(this->Mask,this->TargetPatchRegions[node]);
+//   assert(this->Image->GetLargestPossibleRegion().GetSize()[0] != 0);
+//   assert(this->MaskImage->GetLargestPossibleRegion().GetSize()[0] != 0);
+  assert(this->Image);
+  assert(this->MaskImage);
 
-  itk::ImageRegionConstIterator<TImage> patchIterator(this->Image, this->SourcePatchRegions[label]);
+  // sum of the squared differences in the region of the patch which overlaps the source region
 
-  double ssd = 0; // sum of squared differences
-  unsigned int numberOfPixels = 0;
-  while(!imageIterator.IsAtEnd())
+  assert(this->MaskImage->IsValid(label));
+
+  if(this->MaskImage->IsHole(node))
+  {
+    return 0.0f;
+  }
+
+  itk::ImageRegionConstIterator<TImage> nodeIterator(this->Image, node);
+  itk::ImageRegionConstIteratorWithIndex<Mask> maskIterator(this->MaskImage, node);
+  itk::ImageRegionConstIterator<TImage> labelIterator(this->Image, label);
+
+  float ssd = 0.0f; // sum of squared differences
+  unsigned int numberOfPixelsUsed = 0;
+  while(!nodeIterator.IsAtEnd())
     {
-    if(maskIterator.Get() == 0) // this is the region we want (assuming mask is black in the source region)
+    // this is the region we want (assuming mask is black in the source region)
+    if(this->MaskImage->IsValid(maskIterator.GetIndex()))
       {
-      // Get the value of the current pixel
-      typename TImage::PixelType pixel1 = imageIterator.Get();
-      typename TImage::PixelType pixel2 = patchIterator.Get();
-      ssd += Helpers::SquaredDifference(pixel1, pixel2);
-      numberOfPixels++;
+      typename TImage::PixelType labelPixel = labelIterator.Get();
+      typename TImage::PixelType nodePixel = nodeIterator.Get();
+      for(unsigned int i = 0; i < labelPixel.GetSize(); ++i)
+      {
+        ssd += (labelPixel[i] - nodePixel[i]) * (labelPixel[i] - nodePixel[i]);
+      }
+      numberOfPixelsUsed++;
       }
 
-    ++imageIterator;
+    ++nodeIterator;
     ++maskIterator;
-    ++patchIterator;
+    ++labelIterator;
     }
-  if(numberOfPixels <= 0)
+
+  if(numberOfPixelsUsed == 0)
     {
-    return 0;
+    return 0.0f;
     }
   else
     {
-    return ssd/static_cast<double>(numberOfPixels);
+    return ssd/static_cast<float>(numberOfPixelsUsed);
     }
 }
 

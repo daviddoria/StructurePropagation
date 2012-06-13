@@ -3,27 +3,39 @@
 
 // Submodules
 #include "DynamicProgramming/DynamicProgramming.h"
+#include "Mask/Mask.h"
 
 // ITK
 #include "itkImageRegion.h"
 
-class StructurePropagationDynamicProgramming : public DynamicProgramming<itk::ImageRegion<2> >
+template <typename TImage>
+class StructurePropagationDynamicProgramming : public DynamicProgramming<itk::ImageRegion<2>, itk::ImageRegion<2> >
 {
 public:
-  typedef itk::VectorImage<unsigned char, 2> ImageType;
+
+  StructurePropagationDynamicProgramming();
+
   typedef itk::ImageRegion<2> LabelType;
-  
-  void SetImage(ImageType* const image);
-  
+  typedef itk::ImageRegion<2> NodeType;
+
+  void SetImage(TImage* const image);
+  void SetMask(Mask* const mask);
+
 private:
-  float BinaryEnergy(const LabelType& labelA, const unsigned int nodeA,
-                     const LabelType& labelB, const unsigned int nodeB);
+  float BinaryEnergy(const LabelType& labelA, const NodeType& nodeA,
+                     const LabelType& labelB, const NodeType& nodeB);
 
-  float UnaryEnergy(const LabelType& label, const unsigned int node);
+  float UnaryEnergy(const LabelType& label, const NodeType& node);
 
-  ImageType::Pointer Image;
+  /** The image from which to pull the patches. */
+  //typename TImage::Pointer Image;
+  TImage* Image;
 
-  
+  /** The mask from which to pull the patches. */
+  //typename Mask::Pointer MaskImage;
+  Mask* MaskImage;
 };
+
+#include "StructurePropagationDynamicProgramming.hpp"
 
 #endif

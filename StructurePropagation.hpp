@@ -18,6 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef StructurePropagation_HPP
 #define StructurePropagation_HPP
 
+// Appease syntax parser
 #include "StructurePropagation.h"
 
 // ITK
@@ -37,11 +38,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mask/ITKHelpers/ITKHelpers.h"
 #include "Mask/MaskOperations.h"
 
+// Custom
+#include "StructurePropagationDynamicProgramming.h"
+
 template <typename TImage>
 StructurePropagation<TImage>::StructurePropagation()
 {
   // Initializations
   this->Image = TImage::New();
+  this->OutputImage = TImage::New();
   this->MaskImage = Mask::New();
   this->PropagationLineImage = PropagationLineImageType::New();
 
@@ -66,43 +71,45 @@ void StructurePropagation<TImage>::ClearEverything()
 {
   this->SourcePatchRegions.clear();
   this->TargetPatchRegions.clear();
-  this->NodeLocations.clear();
-  this->Edges.clear();
 }
 
 template <typename TImage>
 void StructurePropagation<TImage>::PropagateStructure()
 {
-  // Find intersections of target line with hole boundary and add them as
-  // additional intersections (so nodes are required to be placed there)
-  for(IndexSetType::iterator iterator = this->PropagationLine.begin();
-      iterator != this->PropagationLine.end(); iterator++)
-    {
-    if(this->MaskImage->IsHole(*iterator)) // the pixel is in the target region
-      {
-      if(ITKHelpers::HasNeighborWithValue(this->MaskImage, *iterator, 0))
-        {
-        this->PropagationLineIntersections.insert(*iterator);
-        std::cout << "Inserted boundary intersection." << std::endl;
-        }
-      }
-    }
+  ComputePatchRegions();
 
-  // Create the graphical model
-  unsigned int numberOfNodes = this->TargetPatchRegions.size();
-  unsigned int numberOfLabels = this->SourcePatchRegions.size();
-  std::cout << "PropagateStructure: There are " << numberOfNodes << " nodes." << std::endl;
-  std::cout << "PropagateStructure: There are " << numberOfLabels << " labels." << std::endl;
+  std::cout << "There are " << this->SourcePatchRegions.size() << " source patch regions (labels)." << std::endl;
+  std::cout << "There are " << this->TargetPatchRegions.size() << " target patch regions (nodes)." << std::endl;
+
+  StructurePropagationDynamicProgramming<TImage> dynamicProgramming;
+  dynamicProgramming.SetImage(this->Image);
+  dynamicProgramming.SetMask(this->MaskImage);
+  dynamicProgramming.SetLabelSet(this->SourcePatchRegions);
+  dynamicProgramming.SetNodes(this->TargetPatchRegions);
+  std::vector<unsigned int> solution = dynamicProgramming.Optimize();
+
+  {// Debug only
+  std::cout << "Solution labels: ";
+  for(unsigned int i = 0; i < solution.size(); i++)
+    {
+    std::cout << solution[i] << " ";
+    }
+  std::cout << std::endl;
+  }
+
+  ITKHelpers::DeepCopy(this->Image.GetPointer(), this->OutputImage.GetPointer());
+
+  Mask::Pointer tempMask = Mask::New();
+  tempMask->DeepCopyFrom(this->MaskImage);
 
   // Fill in the image with the best patches
-//   for(unsigned int i = 0; i < numberOfNodes; i++)
-//     {
-//     itk::ImageRegion<2> destinationRegion =
-//            ITKHelpers::GetRegionInRadiusAroundPixel(this->NodeLocations[i], this->PatchRadius);
-//     MaskOperations::CopySelfPatchIntoHoleOfTargetRegion(this->OutputImage.GetPointer(), this->MaskImage,
-//                                                         this->SourcePatchRegions[result[i]],
-//                                                         destinationRegion);
-//     }
+  for(unsigned int i = 0; i < solution.size(); i++)
+    {
+    MaskOperations::CopySelfPatchIntoHoleOfTargetRegion(this->OutputImage.GetPointer(), tempMask,
+                                                        this->SourcePatchRegions[solution[i]],
+                                                        this->TargetPatchRegions[i]);
+    tempMask->SetValid(this->TargetPatchRegions[i]);
+    }
 
   std::cout << "Finished propagating structure!" << std::endl;
 }
@@ -126,14 +133,16 @@ void StructurePropagation<TImage>::ComputeSourcePatchRegions(const PropagationLi
   // Start fresh
   this->SourcePatchRegions.clear();
 
-//   ITKHelpersTypes::UnsignedCharScalarImageType::Pointer dilatedLineImage =
-//            ITKHelpersTypes::UnsignedCharScalarImageType::New();
-//   ITKHelpers::DilateImage(this->PropagationLineSourceImage, this->SourceLineWidth/2, dilatedLineImage);
-//   Helpers::WriteImage(dilatedLineImage, "DilatedSourceLines.png");
+  std::vector<itk::Index<2> > nonZeroPixels = ITKHelpers::GetNonZeroPixels(propagationLineOutsideMask);
 
-  // The dilated source line image will bleed into the target region,
-  // but this is ok because we ensure that only patches completely in the sourcce region are kept
-
+  for(unsigned int i = 0; i < nonZeroPixels.size(); ++i)
+  {
+    itk::ImageRegion<2> region = ITKHelpers::GetRegionInRadiusAroundPixel(nonZeroPixels[i], this->PatchRadius);
+    if(this->MaskImage->IsValid(region))
+    {
+      this->SourcePatchRegions.push_back(region);
+    }
+  }
 }
 
 template <typename TImage>
@@ -142,20 +151,41 @@ void StructurePropagation<TImage>::ComputeTargetPatchRegions(const PropagationLi
   // Start fresh
   this->TargetPatchRegions.clear();
 
-  itk::Size<2> patchSize;
-  patchSize.Fill(this->PatchRadius*2 + 1);
+  itk::Index<2> pixelOnContour = ITKHelpers::FindFirstNonZeroPixel(propagationLineInsideMask);
+  std::vector<itk::Index<2> > orderedPixels = ITKHelpers::GetOpenContourOrdering(propagationLineInsideMask, pixelOnContour);
 
-  for(unsigned int i = 0; i < this->NodeLocations.size(); i++)
+  // Sample the pixels on the contour so they are about a patchRadius away from each other
+  std::vector<itk::Index<2> > sampledPixels;
+
+  // The first pixel is definitely in the list (should be on the hole boundary)
+  sampledPixels.push_back(orderedPixels[0]);
+
+  for(unsigned int i = 1; i < orderedPixels.size(); i++) // start at 1 because we have already used 0
+  {
+    if(ITKHelpers::IndexDistance(sampledPixels[sampledPixels.size() - 1], orderedPixels[i]) >= this->PatchRadius)
     {
-    // Create a region centered on the pixels
-    itk::Index<2> region = ITKHelpers::GetRegionInRadiusAroundPixel(this->NodeLocations[i], this->PatchRadius);
-
-    // Keep patches which intersect the target region
-//     if(Helpers::IsIntersectTargetRegion(region, this->Mask));
-//       {
-//       this->TargetPatchRegions.push_back(region);
-//       }
+      sampledPixels.push_back(orderedPixels[i]);
     }
+  }
+
+  // Always add the last pixel (if it wasn't already used)
+  if(sampledPixels[sampledPixels.size() - 1] != orderedPixels[orderedPixels.size() - 1])
+  {
+    sampledPixels.push_back(orderedPixels[orderedPixels.size() - 1]);
+  }
+
+  { // debug only
+  ITKHelpersTypes::UnsignedCharScalarImageType::Pointer centersImage = ITKHelpersTypes::UnsignedCharScalarImageType::New();
+  ITKHelpers::InitializeImage(centersImage.GetPointer(), this->Image->GetLargestPossibleRegion());
+  ITKHelpers::SetPixels(centersImage.GetPointer(), sampledPixels, 255);
+  ITKHelpers::WriteImage(centersImage.GetPointer(), "nodeCenters.png");
+  }
+  // Create regions centered on the pixels
+  for(unsigned int i = 0; i < sampledPixels.size(); ++i)
+  {
+    itk::ImageRegion<2> region = ITKHelpers::GetRegionInRadiusAroundPixel(sampledPixels[i], this->PatchRadius);
+    this->TargetPatchRegions.push_back(region);
+  }
 }
 
 template <typename TImage>
@@ -176,18 +206,19 @@ void StructurePropagation<TImage>::ComputePatchRegions()
   // Extract the part of the lines in the source region
   PropagationLineImageType::Pointer propagationLineOutsideMask = PropagationLineImageType::New();
   ITKHelpers::DeepCopy(this->PropagationLineImage.GetPointer(), propagationLineOutsideMask.GetPointer());
-  this->MaskImage->ApplyToImage(propagationLineOutsideMask, 0);
+  this->MaskImage->ApplyToScalarImage(propagationLineOutsideMask.GetPointer(), 0);
 
   ITKHelpers::WriteImage(propagationLineOutsideMask.GetPointer(), "propagationLineOutsideMask.png");
 
   // Extract the part of the lines in the target region
-  PropagationLineImageType::Pointer propagationLineInsideMask = PropagationLineImageType::New();
-  ITKHelpers::DeepCopy(this->PropagationLineImage.GetPointer(), propagationLineInsideMask.GetPointer());
   typedef itk::XorImageFilter<PropagationLineImageType> XORFilterType;
   XORFilterType::Pointer xorFilter = XORFilterType::New();
   xorFilter->SetInput1(propagationLineOutsideMask);
-  xorFilter->SetInput1(this->PropagationLineImage);
+  xorFilter->SetInput2(this->PropagationLineImage);
   xorFilter->Update();
+
+  PropagationLineImageType::Pointer propagationLineInsideMask = PropagationLineImageType::New();
+  ITKHelpers::DeepCopy(xorFilter->GetOutput(), propagationLineInsideMask.GetPointer());
 
   ITKHelpers::WriteImage(propagationLineInsideMask.GetPointer(), "propagationLineInsideMask.png");
 

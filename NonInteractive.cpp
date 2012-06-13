@@ -30,9 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int main(int argc, char* argv[])
 {
-  if(argc != 4)
+  if(argc != 6)
     {
-    std::cerr << "Required: image mask patchRadius" << std::endl;
+    std::cerr << "Required: image mask propagationImage patchRadius output" << std::endl;
     exit(-1);
     }
 
@@ -43,13 +43,17 @@ int main(int argc, char* argv[])
   }
   std::string imageFilename;
   std::string maskFilename;
+  std::string propagationFilename;
   unsigned int patchRadius;
+  std::string outputFilename;
 
-  ss >> imageFilename >> maskFilename >> patchRadius;
+  ss >> imageFilename >> maskFilename >> propagationFilename >> patchRadius >> outputFilename;
 
   std::cout << "Image: " << imageFilename << std::endl;
   std::cout << "Mask: " << maskFilename << std::endl;
+  std::cout << "Propagation image: " << propagationFilename << std::endl;
   std::cout << "Patch radius: " << patchRadius << std::endl;
+  std::cout << "Output: " << outputFilename << std::endl;
 
   typedef ITKHelpersTypes::UnsignedCharVectorImageType ImageType;
   ImageType::Pointer image = ImageType::New();
@@ -58,7 +62,17 @@ int main(int argc, char* argv[])
   Mask::Pointer mask = Mask::New();
   mask->Read(maskFilename);
 
+  typedef StructurePropagation<ImageType>::PropagationLineImageType PropagationLineImageType;
+  PropagationLineImageType::Pointer propagationLineImage = PropagationLineImageType::New();
+  ITKHelpers::ReadImage(propagationFilename, propagationLineImage.GetPointer());
+
   StructurePropagation<ImageType> structurePropagation;
+  structurePropagation.SetPropagationLineImage(propagationLineImage);
+  structurePropagation.SetImage(image);
+  structurePropagation.SetMask(mask);
+  structurePropagation.PropagateStructure();
+
+  ITKHelpers::WriteImage(structurePropagation.GetOutputImage(), outputFilename);
 
   return EXIT_SUCCESS;
 }
