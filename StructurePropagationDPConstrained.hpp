@@ -1,8 +1,8 @@
-#ifndef StructurePropagationDynamicProgramming_hpp
-#define StructurePropagationDynamicProgramming_hpp
+#ifndef StructurePropagationDPConstrained_hpp
+#define StructurePropagationDPConstrained_hpp
 
 // Appease syntax parser
-#include "StructurePropagationDynamicProgramming.h"
+#include "StructurePropagationDPConstrained.h"
 
 // Submodules
 #include "Mask/ITKHelpers/ITKHelpers.h"
@@ -12,29 +12,41 @@
 #include "itkImageRegionConstIteratorWithIndex.h"
 
 template <typename TImage>
-StructurePropagationDynamicProgramming<TImage>::StructurePropagationDynamicProgramming()
+StructurePropagationDPConstrained<TImage>::StructurePropagationDPConstrained()
 {
   this->Image = NULL;
   this->MaskImage = NULL;
 }
 
 template <typename TImage>
-void StructurePropagationDynamicProgramming<TImage>::SetImage(TImage* const image)
+void StructurePropagationDPConstrained<TImage>::SetUnaryBinaryWeight(const float unaryBinaryWeight)
+{
+  this->UnaryBinaryWeight = unaryBinaryWeight;
+}
+
+template <typename TImage>
+void StructurePropagationDPConstrained<TImage>::SetMaxNodeLabelDistance(const unsigned int maxNodeLabelDistance)
+{
+  this->MaxNodeLabelDistance = maxNodeLabelDistance;
+}
+
+template <typename TImage>
+void StructurePropagationDPConstrained<TImage>::SetImage(TImage* const image)
 {
   //ITKHelpers::DeepCopy(image, this->Image.GetPointer());
   this->Image = image;
 }
 
 template <typename TImage>
-void StructurePropagationDynamicProgramming<TImage>::SetMask(Mask* const mask)
+void StructurePropagationDPConstrained<TImage>::SetMask(Mask* const mask)
 {
   //this->MaskImage->DeepCopyFrom(mask);
   this->MaskImage = mask;
 }
 
 template <typename TImage>
-float StructurePropagationDynamicProgramming<TImage>::BinaryEnergy(const LabelType& labelA, const NodeType& nodeA,
-                                                                   const LabelType& labelB, const NodeType& nodeB)
+float StructurePropagationDPConstrained<TImage>::BinaryEnergy(const LabelType& labelA, const NodeType& nodeA,
+                                                              const LabelType& labelB, const NodeType& nodeB)
 {
   // This function assumes that both label regions are entirely valid
 //   assert(this->Image->GetLargestPossibleRegion().GetSize()[0] != 0);
@@ -44,12 +56,28 @@ float StructurePropagationDynamicProgramming<TImage>::BinaryEnergy(const LabelTy
   assert(this->MaskImage->IsValid(labelA));
   assert(this->MaskImage->IsValid(labelB));
 
+  if(ITKHelpers::IndexDistance(ITKHelpers::GetRegionCenter(labelA), ITKHelpers::GetRegionCenter(nodeA)) > this->MaxNodeLabelDistance ||
+     ITKHelpers::IndexDistance(ITKHelpers::GetRegionCenter(labelB), ITKHelpers::GetRegionCenter(nodeB)) > this->MaxNodeLabelDistance)
+  {
+    return std::numeric_limits<float>::infinity();
+  }
+
+//   if(ITKHelpers::IndexDistance(ITKHelpers::GetRegionCenter(labelA), ITKHelpers::GetRegionCenter(nodeA)) > 2 * labelA.GetSize()[0] ||
+//      ITKHelpers::IndexDistance(ITKHelpers::GetRegionCenter(labelB), ITKHelpers::GetRegionCenter(nodeB)) > 2 * labelB.GetSize()[0]
+//   )
+//   {
+//     return std::numeric_limits<float>::infinity();
+//   }
+
   // Find the overlapping region
   itk::ImageRegion<2> overlap = nodeA;
   overlap.Crop(nodeB);
 
   if(overlap.GetNumberOfPixels() == 0)
   {
+    std::stringstream ss;
+    ss << "There are 0 pixels in the overlap of nodes " << nodeA << " and " << nodeB;
+    std::runtime_error(ss.str());
     return 0.0f;
   }
 
@@ -84,16 +112,19 @@ float StructurePropagationDynamicProgramming<TImage>::BinaryEnergy(const LabelTy
 }
 
 template <typename TImage>
-float StructurePropagationDynamicProgramming<TImage>::UnaryEnergy(const LabelType& label, const NodeType& node)
+float StructurePropagationDPConstrained<TImage>::UnaryEnergy(const LabelType& label, const NodeType& node)
 {
 //   assert(this->Image->GetLargestPossibleRegion().GetSize()[0] != 0);
 //   assert(this->MaskImage->GetLargestPossibleRegion().GetSize()[0] != 0);
   assert(this->Image);
   assert(this->MaskImage);
-
-  // sum of the squared differences in the region of the patch which overlaps the source region
-
   assert(this->MaskImage->IsValid(label));
+
+  if(ITKHelpers::IndexDistance(ITKHelpers::GetRegionCenter(label), ITKHelpers::GetRegionCenter(node)) > this->MaxNodeLabelDistance)
+  {
+    return std::numeric_limits<float>::infinity();
+  }
+  // sum of the squared differences in the region of the patch which overlaps the source region
 
   if(this->MaskImage->IsHole(node))
   {
@@ -127,11 +158,14 @@ float StructurePropagationDynamicProgramming<TImage>::UnaryEnergy(const LabelTyp
 
   if(numberOfPixelsUsed == 0)
     {
+    std::stringstream ss;
+    ss << "Unary weight computation used 0 pixels! Node: " << node;
+    throw std::runtime_error(ss.str());
     return 0.0f;
     }
   else
     {
-    return ssd/static_cast<float>(numberOfPixelsUsed);
+    return this->UnaryBinaryWeight * ssd/static_cast<float>(numberOfPixelsUsed);
     }
 }
 

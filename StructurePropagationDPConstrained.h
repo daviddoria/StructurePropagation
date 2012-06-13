@@ -1,5 +1,5 @@
-#ifndef StructurePropagationDynamicProgramming_h
-#define StructurePropagationDynamicProgramming_h
+#ifndef StructurePropagationDPConstrained_h
+#define StructurePropagationDPConstrained_h
 
 // Submodules
 #include "DynamicProgramming/DynamicProgramming.h"
@@ -9,17 +9,21 @@
 #include "itkImageRegion.h"
 
 template <typename TImage>
-class StructurePropagationDynamicProgramming : public DynamicProgramming<itk::ImageRegion<2>, itk::ImageRegion<2> >
+class StructurePropagationDPConstrained : public DynamicProgramming<itk::ImageRegion<2>, itk::ImageRegion<2> >
 {
 public:
 
-  StructurePropagationDynamicProgramming();
+  StructurePropagationDPConstrained();
 
   typedef itk::ImageRegion<2> LabelType;
   typedef itk::ImageRegion<2> NodeType;
 
   void SetImage(TImage* const image);
   void SetMask(Mask* const mask);
+
+  void SetMaxNodeLabelDistance(const unsigned int maxNodeLabelDistance);
+
+  void SetUnaryBinaryWeight(const float unaryBinaryWeight);
 
 private:
   float BinaryEnergy(const LabelType& labelA, const NodeType& nodeA,
@@ -34,8 +38,14 @@ private:
   /** The mask from which to pull the patches. */
   //typename Mask::Pointer MaskImage;
   Mask* MaskImage;
+
+  /** The maximum distance at which a label is allowed to be selected to fill a node. */
+  unsigned int MaxNodeLabelDistance;
+
+  /** The weight between unary and binary terms. */
+  float UnaryBinaryWeight;
 };
 
-#include "StructurePropagationDynamicProgramming.hpp"
+#include "StructurePropagationDPConstrained.hpp"
 
 #endif

@@ -39,7 +39,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mask/MaskOperations.h"
 
 // Custom
-#include "StructurePropagationDynamicProgramming.h"
+#include "StructurePropagationDP.h"
+#include "StructurePropagationDPConstrained.h"
 
 template <typename TImage>
 StructurePropagation<TImage>::StructurePropagation()
@@ -86,7 +87,12 @@ void StructurePropagation<TImage>::PropagateStructure()
   std::cout << "There are " << this->SourceRegions.size() << " source patch regions (labels)." << std::endl;
   std::cout << "There are " << this->TargetRegions.size() << " target patch regions (nodes)." << std::endl;
 
-  StructurePropagationDynamicProgramming<TImage> dynamicProgramming;
+  //StructurePropagationDP<TImage> dynamicProgramming;
+
+  StructurePropagationDPConstrained<TImage> dynamicProgramming;
+  dynamicProgramming.SetMaxNodeLabelDistance(this->PatchRadius * 2);
+  dynamicProgramming.SetUnaryBinaryWeight(2.0f);
+
   dynamicProgramming.SetImage(this->Image);
   dynamicProgramming.SetMask(this->MaskImage);
   dynamicProgramming.SetLabelSet(this->SourceRegions);
@@ -187,6 +193,14 @@ void StructurePropagation<TImage>::ComputeTargetRegionsOpenContour(const Propaga
   ITKHelpers::InitializeImage(centersImage.GetPointer(), this->Image->GetLargestPossibleRegion());
   ITKHelpers::SetPixels(centersImage.GetPointer(), sampledPixels, 255);
   ITKHelpers::WriteImage(centersImage.GetPointer(), "nodeCenters.png");
+
+  ITKHelpersTypes::UnsignedCharScalarImageType::Pointer numberedCentersImage = ITKHelpersTypes::UnsignedCharScalarImageType::New();
+  ITKHelpers::InitializeImage(numberedCentersImage.GetPointer(), this->Image->GetLargestPossibleRegion());
+  for(unsigned int i = 0; i < sampledPixels.size(); ++i)
+  {
+    numberedCentersImage->SetPixel(sampledPixels[i], 100 + i);
+  }
+  ITKHelpers::WriteImage(numberedCentersImage.GetPointer(), "numberedNodeCenters.png");
   }
   // Create regions centered on the pixels
   for(unsigned int i = 0; i < sampledPixels.size(); ++i)
@@ -233,7 +247,16 @@ void StructurePropagation<TImage>::ComputeTargetRegionsClosedContour(const Propa
   ITKHelpers::InitializeImage(centersImage.GetPointer(), this->Image->GetLargestPossibleRegion());
   ITKHelpers::SetPixels(centersImage.GetPointer(), sampledPixels, 255);
   ITKHelpers::WriteImage(centersImage.GetPointer(), "nodeCenters.png");
+
+  ITKHelpersTypes::UnsignedCharScalarImageType::Pointer numberedCentersImage = ITKHelpersTypes::UnsignedCharScalarImageType::New();
+  ITKHelpers::InitializeImage(numberedCentersImage.GetPointer(), this->Image->GetLargestPossibleRegion());
+  for(unsigned int i = 0; i < sampledPixels.size(); ++i)
+  {
+    numberedCentersImage->SetPixel(sampledPixels[i], 100 + i);
   }
+  ITKHelpers::WriteImage(numberedCentersImage.GetPointer(), "numberedNodeCenters.png");
+  }
+
   // Create regions centered on the pixels
   for(unsigned int i = 0; i < sampledPixels.size(); ++i)
   {
