@@ -20,3 +20,4 @@ add_subdirectory(DynamicProgramming)
 
 ADD_EXECUTABLE(StructurePropagation NonInteractive.cpp)
 TARGET_LINK_LIBRARIES(StructurePropagation ${ITK_LIBRARIES} Mask)
+

@@ -37,17 +37,28 @@ public:
   /** Actually perform the structure propagation */
   void PropagateStructure();
 
-  /** Clear everything. */
-  void ClearEverything();
+  /** This function divides the propagation line into the part of the line that is inside the hole
+    * and the part of the line that is outside the hole. It then calls ComputeSourceRegions and ComputeTargetRegions
+    * on the corrsponding parts of the line. */
+  void ComputeRegionsPropagationThroughHole();
 
-  /** This function simply calls ComputeSourcePatchRegions and ComputeTargetPatchRegions */
-  void ComputePatchRegions();
+  /** This function computes the source region in a dilated ring around the hole, and the target regions along the hole boundary. */
+  void ComputeRegionsPropagationAroundHole();
+
+  /** Set the regions considered as labels/source patches. */
+  void SetSourceRegions(const std::vector<itk::ImageRegion<2> >& sourceRegions);
+
+  /** Set the regions considered as nodes/target patches. */
+  void SetTargetRegions(const std::vector<itk::ImageRegion<2> >& targetRegions);
 
   /** Compute the source/label regions from the propagation line image. */
-  void ComputeSourcePatchRegions(const PropagationLineImageType* const propagationLineOutsideMask);
+  void ComputeSourceRegions(const PropagationLineImageType* const propagationLineOutsideMask);
 
   /** Compute the target/node regions from the propagation line image. */
-  void ComputeTargetPatchRegions(const PropagationLineImageType* const propagationLineInsideMask);
+  void ComputeTargetRegionsOpenContour(const PropagationLineImageType* const propagationLineInsideMask);
+
+  /** Compute the target/node regions from the propagation line image. */
+  void ComputeTargetRegionsClosedContour(const PropagationLineImageType* const propagationLineInsideMask);
 
   /** Set the mask to indicate the hole region */
   void SetMask(Mask* mask);
@@ -88,10 +99,10 @@ private:
   unsigned int PatchRadius;
 
   /** The regions of the image corresponding to source/label patches. */
-  std::vector<itk::ImageRegion<2> > SourcePatchRegions;
+  std::vector<itk::ImageRegion<2> > SourceRegions;
 
   /** The regions of the image corresponding to target/node patches. */
-  std::vector<itk::ImageRegion<2> > TargetPatchRegions;
+  std::vector<itk::ImageRegion<2> > TargetRegions;
 
 };
 
