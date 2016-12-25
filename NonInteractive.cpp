@@ -71,8 +71,8 @@ int main(int argc, char* argv[])
   structurePropagation.SetImage(image);
   structurePropagation.SetMask(mask);
   structurePropagation.SetPatchRadius(patchRadius);
-  //structurePropagation.ComputeRegionsPropagationThroughHole();
-  structurePropagation.ComputeRegionsPropagationAroundHole();
+  structurePropagation.ComputeRegionsPropagationThroughHole();
+  //structurePropagation.ComputeRegionsPropagationAroundHole();
   structurePropagation.PropagateStructure();
 
   ITKHelpers::WriteImage(structurePropagation.GetOutputImage(), outputFilename);
